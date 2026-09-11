@@ -1,1 +1,2554 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Routecard</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/lz-string/1.5.0/lz-string.min.js"></script>
+<style>
+  :root{
+    --asphalt: #23262b;
+    --asphalt-2: #34383f;
+    --asphalt-3: #2b2f36;
+    --paper: #f2efe9;
+    --lime: #d7e34c;
+    --lime-dim: #b9c53f;
+    --rust: #c25a3f;
+    --ban: #8b3a2b;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0; height: 100%;
+    background: var(--paper);
+    color: var(--asphalt);
+    font-family: 'Inter', 'Helvetica Neue', Arial, sans-serif;
+  }
+  #app {
+    display: grid;
+    grid-template-columns: 360px 1fr;
+    height: 100vh;
+    min-height: 560px;
+  }
+  @media (max-width: 760px) {
+    #app { grid-template-columns: 1fr; grid-template-rows: auto 1fr; height: auto; min-height: 100vh; }
+    #map { height: 55vh; }
+  }
 
+  /* ---------- Sidebar ---------- */
+  #sidebar {
+    background: var(--asphalt);
+    color: var(--paper);
+    padding: 22px 20px 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    overflow-y: auto;
+    border-right: 1px solid #000;
+  }
+  .brand { display: flex; align-items: baseline; gap: 8px; margin-bottom: 2px; }
+  .brand-mark { width: 11px; height: 11px; background: var(--lime); border-radius: 50%; flex-shrink: 0; transform: translateY(-1px); }
+  h1 { font-family: 'Georgia', 'Iowan Old Style', serif; font-size: 22px; font-weight: 600; margin: 0; letter-spacing: -0.01em; }
+  .sub { font-size: 12.5px; color: #b8bcc4; line-height: 1.5; margin: -4px 0 2px; }
+
+  hr.sep { border: none; border-top: 1px solid #3b3f47; margin: 2px 0; }
+
+  .field { display: flex; flex-direction: column; gap: 6px; }
+  .field > label { font-size: 11px; color: #9aa0ac; display: flex; align-items: center; gap: 6px; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+  .dot.start { background: var(--lime); }
+  .dot.finish { background: var(--rust); }
+  .dot.avoid { background: var(--rust); }
+  .dot.ban { background: var(--ban); }
+
+  input[type="text"], input[type="number"] {
+    background: var(--asphalt-2);
+    border: 1px solid #454a53;
+    color: var(--paper);
+    padding: 9px 10px;
+    border-radius: 6px;
+    font-size: 13.5px;
+    outline: none;
+    font-family: inherit;
+  }
+  input::placeholder { color: #7d828d; }
+  input:focus { border-color: var(--lime); }
+
+  .hint { font-size: 11.5px; color: #838993; margin-top: -2px; line-height: 1.5; }
+  .target-hint { color: var(--lime); font-weight: 600; }
+
+  #waypoints { display: flex; flex-direction: column; gap: 10px; }
+  .wp-row { display: flex; flex-direction: column; gap: 6px; }
+  .wp-row > label { font-size: 11px; color: #9aa0ac; display: flex; align-items: center; gap: 6px; }
+  .wp-input-group { display: flex; gap: 6px; align-items: center; }
+  .wp-input-group input[type="text"] { flex: 1; min-width: 0; }
+  .icon-btn {
+    flex-shrink: 0; width: 30px; height: 30px; border-radius: 6px;
+    border: 1px solid #454a53; background: var(--asphalt-2); color: #b8bcc4;
+    cursor: pointer; font-size: 14px;
+    display: flex; align-items: center; justify-content: center; font-family: inherit;
+  }
+  .icon-btn:hover { border-color: #6b7280; }
+  .icon-btn.armed { background: var(--lime); border-color: var(--lime); color: var(--asphalt); }
+  .icon-btn.remove { color: #d99; }
+  .icon-btn.remove:hover { border-color: #c25a3f; }
+
+  .ghost-btn {
+    background: transparent; border: 1px dashed #5a5f68; color: #b8bcc4;
+    padding: 8px; border-radius: 6px; cursor: pointer;
+    font-family: inherit; font-size: 12.5px; text-align: center;
+  }
+  .ghost-btn:hover { border-color: var(--lime); color: var(--lime); }
+  .ghost-btn.warn:hover { border-color: var(--rust); color: #e5977f; }
+  .ghost-btn.armed { background: var(--rust); border-color: var(--rust); color: var(--paper); }
+
+  .loop-toggle { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: #d8dbe0; cursor: pointer; }
+  .loop-toggle input { accent-color: var(--lime); width: 15px; height: 15px; }
+
+  .compass-btn, .pill-btn {
+    flex: 1; background: var(--asphalt-3); border: 1px solid #454a53; color: #b8bcc4;
+    padding: 6px 4px; border-radius: 5px; cursor: pointer; font-family: inherit; font-size: 11px;
+    display: flex; flex-direction: column; align-items: center; gap: 1px;
+  }
+  .compass-btn:hover, .pill-btn:hover { border-color: #6b7280; }
+  .compass-btn.active, .pill-btn.active { background: var(--lime); border-color: var(--lime); color: var(--asphalt); font-weight: 600; }
+  .pill-btn strong { font-size: 11.5px; font-weight: 600; }
+  .pill-btn span { font-size: 9.5px; opacity: 0.85; }
+
+  /* generic named-item row: used for avoid zones, road bans, saved presets/routes */
+  .item-row {
+    display: flex; align-items: center; gap: 6px;
+    background: var(--asphalt-2); border: 1px solid #454a53; border-radius: 6px;
+    padding: 6px 8px; font-size: 12px;
+  }
+  .item-row input[type="text"] {
+    flex: 1; min-width: 0; padding: 5px 7px; font-size: 12px;
+    background: var(--asphalt-3); border-color: #454a53;
+  }
+  .item-row .meta { color: #838993; font-size: 10.5px; white-space: nowrap; }
+  .item-row input[type="number"] { width: 50px; padding: 5px 6px; font-size: 12px; }
+  .item-list { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }
+
+  .profiles { display: flex; flex-direction: column; gap: 6px; }
+  .profile-btn {
+    text-align: left; background: var(--asphalt-2); border: 1px solid #454a53; color: var(--paper);
+    padding: 10px 11px; border-radius: 6px; cursor: pointer; font-family: inherit; font-size: 13px;
+    display: flex; flex-direction: column; gap: 2px;
+    transition: border-color .15s ease, background .15s ease;
+  }
+  .profile-btn strong { font-size: 13.5px; font-weight: 600; }
+  .profile-btn span { font-size: 11.5px; color: #9aa0ac; line-height: 1.4; }
+  .profile-btn:hover { border-color: #6b7280; }
+  .profile-btn.active { background: var(--lime); border-color: var(--lime); color: var(--asphalt); }
+  .profile-btn.active span { color: #454a2f; }
+
+  #advanced-toggle-label { cursor: pointer; user-select: none; }
+  #advanced-panel {
+    display: flex; flex-direction: column; gap: 10px;
+    background: var(--asphalt-2); border: 1px solid #454a53; border-radius: 6px; padding: 10px 11px;
+  }
+  .toggle-row { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: #d8dbe0; cursor: pointer; }
+  .toggle-row input { accent-color: var(--lime); width: 14px; height: 14px; flex-shrink: 0; }
+  .slider-row { display: flex; align-items: center; gap: 8px; font-size: 11.5px; color: #b8bcc4; }
+  .slider-row label { flex-shrink: 0; width: 100px; }
+  .slider-row input[type="range"] { flex: 1; accent-color: var(--lime); }
+  .slider-row span.val { flex-shrink: 0; width: 40px; text-align: right; font-variant-numeric: tabular-nums; color: #d8dbe0; }
+
+  #go-btn {
+    margin-top: 2px; background: var(--lime); color: var(--asphalt); border: none;
+    padding: 12px; font-size: 14px; font-weight: 600; border-radius: 6px; cursor: pointer; font-family: inherit;
+  }
+  #go-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+  #go-btn:hover:not(:disabled) { background: var(--lime-dim); }
+
+  #status { font-size: 12.5px; color: #b8bcc4; min-height: 18px; line-height: 1.5; }
+  #status.err { color: #e5977f; }
+
+  #result { display: none; border-top: 1px solid #3b3f47; padding-top: 14px; }
+  #result.show { display: block; }
+  .stat-row { display: flex; justify-content: space-between; align-items: baseline; padding: 7px 0; border-bottom: 1px solid #3b3f47; }
+  .stat-row:last-child { border-bottom: none; }
+  .stat-label { font-size: 12px; color: #9aa0ac; }
+  .stat-value { font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .stat-note { font-size: 10.5px; color: #6b7280; margin-top: -6px; margin-bottom: 4px; line-height: 1.4; }
+
+  #legend { display: flex; flex-direction: column; gap: 5px; margin-top: 8px; }
+  .legend-row { display: flex; align-items: center; gap: 8px; font-size: 12px; }
+  .legend-swatch { width: 12px; height: 12px; border-radius: 3px; flex-shrink: 0; }
+  .legend-label { flex: 1; color: #d8dbe0; }
+  .legend-dist { color: #9aa0ac; font-variant-numeric: tabular-nums; }
+
+  .footnote { margin-top: auto; padding-top: 12px; font-size: 11px; color: #6b7280; line-height: 1.5; }
+  .footnote a { color: #9aa0ac; }
+
+  #file-input { display: none; }
+
+  /* ---------- Map ---------- */
+  #map { width: 100%; height: 100%; background: #dfe3e6; }
+  .leaflet-container { font-family: inherit; }
+  .map-empty { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; pointer-events: none; z-index: 400; }
+  .map-empty-card {
+    background: rgba(35,38,43,0.88); color: var(--paper); padding: 10px 16px; border-radius: 8px;
+    font-size: 12.5px; max-width: 260px; text-align: center; line-height: 1.5;
+  }
+  .wp-tooltip.leaflet-tooltip {
+    background: var(--asphalt); color: var(--paper); border: 1px solid #454a53;
+    font-size: 11.5px; font-family: inherit; padding: 5px 9px; border-radius: 6px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.35);
+  }
+  .wp-tooltip.leaflet-tooltip-top::before { border-top-color: var(--asphalt); }
+</style>
+</head>
+<body>
+
+<div id="app">
+  <div id="sidebar">
+    <div class="brand">
+      <div class="brand-mark"></div>
+      <h1>Routecard</h1>
+    </div>
+    <p class="sub">Bike routing that reads the road, not just the distance.</p>
+    <button id="undo-btn" type="button" class="ghost-btn" disabled>↩ Undo</button>
+
+    <button id="import-btn" type="button" class="ghost-btn">⇪ Import a GPX route</button>
+    <input type="file" id="file-input" accept=".gpx" />
+    <div id="import-actions" style="display:none; flex-direction:column; gap:6px;">
+      <p class="hint">Imported track shown on the map as a reference. Use it to set your start/finish, or turn it into an editable route.</p>
+      <div style="display:flex; gap:6px;">
+        <button id="import-use-start" type="button" class="ghost-btn" style="flex:1;">Use as start</button>
+        <button id="import-use-finish" type="button" class="ghost-btn" style="flex:1;">Use as finish</button>
+      </div>
+      <button id="import-make-editable" type="button" class="ghost-btn">✎ Make this an editable route</button>
+      <p class="hint">Turns the track into stops that BRouter will re-route through on real roads — retracing it as closely as it can, and rerouting around anything you mark to avoid.</p>
+      <button id="import-clear" type="button" class="ghost-btn warn">Clear imported track</button>
+    </div>
+
+    <hr class="sep" />
+
+    <div id="waypoints"></div>
+    <div style="display:flex; gap:6px;">
+      <button id="add-stop-btn" type="button" class="ghost-btn" style="flex:1;">+ Add a stop</button>
+      <button id="clear-stops-btn" type="button" class="ghost-btn warn" style="flex:0 0 auto; padding:8px 10px;">Clear stops</button>
+    </div>
+    <label class="loop-toggle" style="margin-top:-2px;">
+      <input type="checkbox" id="stop-mode-along" />
+      <span>Slot new stops into the route (Komoot-style), not just onto the end</span>
+    </label>
+
+    <label class="loop-toggle">
+      <input type="checkbox" id="loop-check" />
+      <span>End where I start (loop)</span>
+    </label>
+    <button id="reverse-route-btn" type="button" class="ghost-btn" style="margin-top:-2px;">⇄ Reverse route</button>
+
+    <div id="loop-size-panel" class="field">
+      <label>Route bulges</label>
+      <button id="bulge-btn" type="button" class="ghost-btn">📍 Drop a bulge toward an area</button>
+      <div id="bulge-list" class="item-list"></div>
+      <p class="hint">Each pin bulges out the nearest stretch of your route (the segment between two consecutive stops, start, or finish) rather than spurring off one point — drag to reposition. Once you've plotted a route, drag the "extend" slider and watch the real distance update live instead of guessing a number. Works whether you're looping or riding point-to-point.</p>
+    </div>
+
+    <hr class="sep" />
+
+    <div class="field">
+      <label>Areas to avoid</label>
+      <button id="avoid-btn" type="button" class="ghost-btn warn">◎ Mark an area to avoid</button>
+      <div id="nogo-list" class="item-list"></div>
+      <p class="hint" id="avoid-hint" style="display:none;">Tap the map to mark — keep tapping to add more. Click the button again to stop.</p>
+    </div>
+
+    <div class="field">
+      <label>Ban a specific road</label>
+      <button id="ban-btn" type="button" class="ghost-btn warn">⛔ Trace a road to ban</button>
+      <div id="ban-list" class="item-list"></div>
+      <p class="hint" id="ban-hint" style="display:none;">Click points tracing along just that road — not a parallel path. Then finish it.</p>
+      <button id="ban-finish-btn" type="button" class="ghost-btn" style="display:none;">✓ Finish this road</button>
+    </div>
+
+    <div class="field">
+      <label>Avoid-zone presets</label>
+      <div style="display:flex; gap:6px;">
+        <input type="text" id="preset-name" placeholder="Name this set…" style="flex:1;" />
+        <button id="preset-save-btn" type="button" class="icon-btn" style="width:auto; padding:0 10px;" title="Save current areas/roads to avoid">Save</button>
+      </div>
+      <div id="preset-list" class="item-list"></div>
+      <p class="hint">Save your marked areas and banned roads once, then load them into any future route.</p>
+    </div>
+
+    <hr class="sep" />
+
+    <div class="field">
+      <label>Route character</label>
+      <div class="profiles" id="profiles"></div>
+    </div>
+
+    <div class="field">
+      <label id="advanced-toggle-label">Fine-tune ▸</label>
+      <div id="advanced-panel" style="display:none;">
+        <div id="advanced-toggles"></div>
+        <div class="slider-row">
+          <label for="hill-slider">Avoid hills</label>
+          <input type="range" id="hill-slider" min="0" max="150" step="10" value="0" />
+          <span class="val" id="hill-slider-val">off</span>
+        </div>
+        <div class="slider-row">
+          <label for="elev-slider">Hill sensitivity</label>
+          <input type="range" id="elev-slider" min="0" max="3" step="0.1" value="1.5" />
+          <span class="val" id="elev-slider-val">1.5%</span>
+        </div>
+        <p class="hint">"Hill sensitivity" is the smallest gradient BRouter counts — lower catches more small rises, closer to what a GPS computer logs (see note below).</p>
+        <p class="hint">No stock BRouter profile has a literal "no shared paths" switch. For fewer pedestrian-shared paths, try "Fast / road bike" — it favours paved roads over paths.</p>
+      </div>
+    </div>
+
+    <button id="go-btn" disabled>Plot the route</button>
+    <p class="hint" id="autoplot-hint" style="display:none; margin-top:-2px;">Plotted — further changes now update this automatically.</p>
+    <div id="status"></div>
+
+    <div id="result">
+      <div class="stat-row"><span class="stat-label">Distance</span><span class="stat-value" id="stat-distance">—</span></div>
+      <div class="stat-row"><span class="stat-label">Estimated time</span><span class="stat-value" id="stat-time">—</span></div>
+      <div class="stat-row"><span class="stat-label">Climb</span><span class="stat-value" id="stat-climb">—</span></div>
+      <p class="stat-note">Modelled from terrain data, not a GPS log — usually reads lower than your bike computer. See note below.</p>
+
+      <div id="alt-block" style="display:none;">
+        <label style="font-size:11px; color:#9aa0ac; display:block; margin-bottom:6px;">Alternatives</label>
+        <div id="alt-list" style="display:flex; gap:6px;"></div>
+      </div>
+
+      <div id="elevation-block" style="display:none; margin-top:12px;">
+        <label style="font-size:11px; color:#9aa0ac; display:block; margin-bottom:4px;">Elevation profile</label>
+        <div id="elevation-chart-wrap" style="position:relative;">
+          <svg id="elevation-chart" viewBox="0 0 400 110" preserveAspectRatio="none" style="width:100%; height:90px; display:block; cursor:crosshair;"></svg>
+          <div id="elevation-readout" style="display:none; position:absolute; top:2px; left:2px; font-size:10.5px; color:#d8dbe0; background:rgba(35,38,43,0.9); padding:2px 6px; border-radius:4px; pointer-events:none;"></div>
+        </div>
+      </div>
+
+      <div id="breakdown-block" style="display:none;">
+        <label class="loop-toggle" style="margin-top:6px;">
+          <input type="checkbox" id="colour-toggle" />
+          <span>Colour route by road type</span>
+        </label>
+        <div id="legend"></div>
+      </div>
+
+      <div id="legs-block" style="display:none; margin-top:12px;">
+        <label style="font-size:11px; color:#9aa0ac; display:block; margin-bottom:6px;">Leg-by-leg (estimated for)</label>
+        <div id="fitness-levels" style="display:grid; grid-template-columns:repeat(4, 1fr); gap:6px; margin-bottom:8px;"></div>
+        <div id="legs-list" class="item-list"></div>
+      </div>
+
+      <button id="export-btn" type="button" class="ghost-btn" style="margin-top:10px;">⤓ Export as GPX</button>
+      <button id="komoot-btn" type="button" class="ghost-btn" style="margin-top:6px;">→ Send to Komoot</button>
+
+      <div class="field" style="margin-top:12px;">
+        <label>Save this route</label>
+        <div style="display:flex; gap:6px;">
+          <input type="text" id="route-name" placeholder="Name this route…" style="flex:1;" />
+          <button id="route-save-btn" type="button" class="icon-btn" style="width:auto; padding:0 10px;">Save</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="field">
+      <label>My saved routes</label>
+      <div id="route-list" class="item-list"></div>
+    </div>
+
+    <div class="field">
+      <label>Share this route</label>
+      <button id="share-link-btn" type="button" class="ghost-btn">🔗 Copy share link</button>
+      <p class="hint">Encodes your stops, bulges, avoid zones, and profile into a link — not the plotted path itself, so whoever opens it re-plots on their end.</p>
+    </div>
+
+    <hr class="sep" />
+
+    <div class="field">
+      <label>Backup &amp; restore</label>
+      <p class="hint">Saved items live only in this browser tab. Export them to a file you keep, and import that file next time to get them all back.</p>
+      <div style="display:flex; gap:6px;">
+        <button id="export-data-btn" type="button" class="ghost-btn" style="flex:1;">⤓ Export my saved data</button>
+        <button id="import-data-btn" type="button" class="ghost-btn" style="flex:1;">⇪ Import saved data</button>
+      </div>
+      <input type="file" id="data-file-input" accept=".json" style="display:none;" />
+    </div>
+
+    <div class="footnote">
+      Routing by <a href="https://brouter.de" target="_blank">BRouter</a> (OpenStreetMap data). Map tiles &copy; OpenStreetMap contributors.
+    </div>
+  </div>
+
+  <div style="position:relative;">
+    <div id="map"></div>
+    <div class="map-empty" id="map-empty">
+      <div class="map-empty-card">Set a start and finish to plot a route</div>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ========================================================================
+   STATE
+   ======================================================================== */
+const PROFILES = [
+  { id: 'trekking', label: 'Balanced', desc: 'Prefers bike paths and cycle-friendly streets. Good default.' },
+  { id: 'fastbike', label: 'Fast / road bike', desc: 'Direct routes on paved roads, comfortable with more traffic.' },
+  { id: 'shortest', label: 'Shortest', desc: 'Minimises distance regardless of road type.' },
+];
+
+const ADVANCED_OPTIONS = [
+  { id: 'avoidUnsafe',      param: 'avoid_unsafe',         label: 'Avoid roads with no bike lane',  on: '1', off: '0' },
+  { id: 'stickCycleroutes', param: 'stick_to_cycleroutes', label: 'Stick to signed cycle routes only', on: '1', off: '0' },
+  { id: 'bypassTowns',      param: 'consider_town',        label: 'Bypass town centres where possible', on: '1', off: '0' },
+  { id: 'preferQuiet',      param: 'consider_traffic',     label: 'Favor lower-traffic roads (where data exists)', on: '1', off: '0' },
+  { id: 'avoidStairs',      param: 'allow_steps',          label: 'Avoid stairs', on: '0', off: '1' },
+];
+
+const ROAD_CATEGORIES = [
+  { id: 'cycleway', label: 'Dedicated cycleway',        color: '#4f8f57' },
+  { id: 'quiet',    label: 'Quiet / residential',       color: '#d7e34c' },
+  { id: 'shared',   label: 'Shared path (pedestrians)',  color: '#e0a83e' },
+  { id: 'busy',     label: 'Busier road',                color: '#c25a3f' },
+  { id: 'track',    label: 'Track / unpaved',            color: '#8b5e3c' },
+  { id: 'other',    label: 'Other',                      color: '#9aa0ac' },
+];
+
+let nextId = 1;
+let selectedProfile = 'trekking';
+let loopMode = false;
+let loopBulges = [];      // {id, lat, lon, extendKm, marker}
+let bulgeArmed = false;   // true while "drop a bulge" is armed for a map click
+
+let waypoints = [
+  { id: nextId++, role: 'start',  lat: null, lon: null, label: '' },
+  { id: nextId++, role: 'finish', lat: null, lon: null, label: '' },
+];
+
+let nogos = [];      // {id, lat, lon, radius, name}
+let roadBans = [];   // {id, points:[[lat,lon],...], name}
+
+let advancedState = {};
+ADVANCED_OPTIONS.forEach(o => advancedState[o.id] = false);
+let hillAvoidance = 0;         // 0-150, profile:uphillcost / downhillcost
+let elevSensitivity = 1.5;     // profile:uphillcutoff / downhillcutoff (%)
+
+let importedTrack = null;      // [[lat,lon], ...]
+let importedTrackLine = null;  // L.Polyline
+
+let lastRouteCoords = null;
+let lastRouteMessages = null;  // parsed BRouter messages rows, or null
+let lastRouteCategoryTotals = null;
+let lastRouteElevations = null; // parallel array to lastRouteCoords, metres or null
+let lastRouteCumKm = null;      // parallel array to lastRouteCoords, cumulative km from start
+let lastElevationProfile = null; // downsampled [{distKm, ele, lat, lon}] for charting
+let lastRouteAscend = null; // BRouter's own noise-filtered total ascent, in metres
+let highlightMapMarkers = [];
+
+// climbMPerHour: roughly how many vertical metres/hour that level can
+// sustain climbing — a faster rider isn't just quicker on the flat, they
+// also climb at a faster vertical rate, so this scales with kmh rather than
+// using one fixed seconds-per-metre penalty for everyone.
+const FITNESS_LEVELS = [
+  { id: 'casual', label: 'Casual', kmh: 15, climbMPerHour: 300 },
+  { id: 'moderate', label: 'Moderate', kmh: 20, climbMPerHour: 450 },
+  { id: 'sporty', label: 'Sporty', kmh: 25, climbMPerHour: 600 },
+  { id: 'fast', label: 'Fast', kmh: 30, climbMPerHour: 750 },
+  { id: 'racer', label: 'Racer', kmh: 35, climbMPerHour: 900 },
+  { id: 'elite', label: 'Elite', kmh: 40, climbMPerHour: 1050 },
+  { id: 'pro', label: 'Pro', kmh: 45, climbMPerHour: 1200 },
+];
+let fitnessLevel = 'moderate';
+
+// Alternatives: BRouter can return a few different routes (alternativeidx
+// 0-3) for the same via-points. Cached per index so flipping back is instant.
+let currentAltIdx = 0;
+let altCache = {}; // idx -> {coords, elevations, messages, distanceM, timeS, ascend}
+
+// Once you've plotted a route manually, further edits (stops, bulges,
+// avoid zones, profile, etc.) auto-replot after a short pause, instead of
+// requiring another click every time.
+let hasPlottedOnce = false;
+let autoPlotTimer = null;
+let autoPlotInFlight = false;
+
+function scheduleAutoReplot() {
+  if (!hasPlottedOnce) return;
+  if (autoPlotTimer) clearTimeout(autoPlotTimer);
+  autoPlotTimer = setTimeout(() => { plotRoute(true); }, 700);
+}
+
+function updateAutoplotHint() {
+  autoplotHint.style.display = hasPlottedOnce ? 'block' : 'none';
+}
+
+/* ---------- Undo ---------- */
+// Whole-state snapshots rather than bespoke inverse operations per action —
+// simpler and harder to get subtly wrong. Capped so it doesn't grow forever.
+let undoStack = []; // {label, snapshot}
+
+function snapshotState() {
+  return {
+    waypoints: JSON.parse(JSON.stringify(waypoints)),
+    loopBulges: JSON.parse(JSON.stringify(loopBulges)),
+    nogos: JSON.parse(JSON.stringify(nogos)),
+    roadBans: JSON.parse(JSON.stringify(roadBans)),
+  };
+}
+
+function pushUndo(label) {
+  undoStack.push({ label, snapshot: snapshotState() });
+  if (undoStack.length > 15) undoStack.shift();
+  updateUndoBtnUI();
+}
+
+function updateUndoBtnUI() {
+  const top = undoStack[undoStack.length - 1];
+  undoBtn.disabled = !top;
+  undoBtn.title = top ? ('Undo: ' + top.label) : 'Nothing to undo';
+}
+
+function performUndo() {
+  const entry = undoStack.pop();
+  if (!entry) return;
+  waypoints = entry.snapshot.waypoints;
+  loopBulges = entry.snapshot.loopBulges;
+  nogos = entry.snapshot.nogos;
+  roadBans = entry.snapshot.roadBans;
+  armedId = null;
+  renderWaypointRows();
+  renderMarkers();
+  renderNogos();
+  renderBans();
+  statusEl.textContent = 'Undid: ' + entry.label;
+  statusEl.className = '';
+  updateUndoBtnUI();
+  scheduleAutoReplot();
+}
+
+
+/* map layers */
+let wpMarkers = {};
+let nogoCircles = {};
+let banLines = {};
+let routeLine = null;
+let colourSegmentLines = [];
+
+/* interaction arming */
+let armedId = null;      // waypoint id currently armed for map-click placement
+let addStopMode = 'end'; // 'end' = append (default), 'along' = slot into nearest edge
+let newStopArmed = false; // true while "+ Add a stop" is armed for the next map click
+let nogoArmed = false;
+let banArmed = false;
+let banDraft = null;
+let banDraftLine = null;
+let banPointMarkers = [];
+
+const DEFAULT_NOGO_RADIUS = 60;
+
+/* ========================================================================
+   MAP SETUP
+   ======================================================================== */
+const map = L.map('map', { zoomControl: true }).setView([51.505, -0.09], 12);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  maxZoom: 19,
+  attribution: '&copy; OpenStreetMap contributors'
+}).addTo(map);
+
+if (navigator.geolocation) {
+  navigator.geolocation.getCurrentPosition(
+    pos => map.setView([pos.coords.latitude, pos.coords.longitude], 13),
+    () => {},
+    { timeout: 3000 }
+  );
+}
+
+/* ========================================================================
+   DOM REFS
+   ======================================================================== */
+const wpContainer   = document.getElementById('waypoints');
+const addStopBtn    = document.getElementById('add-stop-btn');
+const clearStopsBtn = document.getElementById('clear-stops-btn');
+const loopCheck     = document.getElementById('loop-check');
+const reverseRouteBtn = document.getElementById('reverse-route-btn');
+const goBtn         = document.getElementById('go-btn');
+const autoplotHint  = document.getElementById('autoplot-hint');
+const statusEl      = document.getElementById('status');
+const resultEl      = document.getElementById('result');
+const mapEmpty      = document.getElementById('map-empty');
+const profilesEl    = document.getElementById('profiles');
+const avoidBtn      = document.getElementById('avoid-btn');
+const avoidHint     = document.getElementById('avoid-hint');
+const banBtn        = document.getElementById('ban-btn');
+const banHint       = document.getElementById('ban-hint');
+const banFinishBtn  = document.getElementById('ban-finish-btn');
+const advToggleLbl  = document.getElementById('advanced-toggle-label');
+const advPanel      = document.getElementById('advanced-panel');
+const advToggles    = document.getElementById('advanced-toggles');
+const hillSlider    = document.getElementById('hill-slider');
+const hillSliderVal = document.getElementById('hill-slider-val');
+const elevSlider    = document.getElementById('elev-slider');
+const elevSliderVal = document.getElementById('elev-slider-val');
+const exportBtn     = document.getElementById('export-btn');
+const komootBtn      = document.getElementById('komoot-btn');
+const altBlock       = document.getElementById('alt-block');
+const altListEl      = document.getElementById('alt-list');
+const elevationBlock = document.getElementById('elevation-block');
+const elevationChart = document.getElementById('elevation-chart');
+const elevationReadout = document.getElementById('elevation-readout');
+const legsBlock      = document.getElementById('legs-block');
+const fitnessLevelsEl = document.getElementById('fitness-levels');
+const legsListEl     = document.getElementById('legs-list');
+const colourToggle  = document.getElementById('colour-toggle');
+const legendEl      = document.getElementById('legend');
+const breakdownBlock= document.getElementById('breakdown-block');
+const importBtn     = document.getElementById('import-btn');
+const undoBtn        = document.getElementById('undo-btn');
+const fileInput      = document.getElementById('file-input');
+const importActions = document.getElementById('import-actions');
+const importUseStart = document.getElementById('import-use-start');
+const importUseFinish= document.getElementById('import-use-finish');
+const importMakeEditableBtn = document.getElementById('import-make-editable');
+const importClearBtn = document.getElementById('import-clear');
+const presetNameInput = document.getElementById('preset-name');
+const presetSaveBtn = document.getElementById('preset-save-btn');
+const presetListEl  = document.getElementById('preset-list');
+const routeNameInput= document.getElementById('route-name');
+const routeSaveBtn  = document.getElementById('route-save-btn');
+const routeListEl   = document.getElementById('route-list');
+const shareLinkBtn  = document.getElementById('share-link-btn');
+const stopModeAlong = document.getElementById('stop-mode-along');
+const loopSizePanel = document.getElementById('loop-size-panel');
+const bulgeBtn       = document.getElementById('bulge-btn');
+const bulgeListEl    = document.getElementById('bulge-list');
+const exportDataBtn = document.getElementById('export-data-btn');
+const importDataBtn = document.getElementById('import-data-btn');
+const dataFileInput = document.getElementById('data-file-input');
+
+undoBtn.addEventListener('click', performUndo);
+
+/* ========================================================================
+   WAYPOINTS
+   ======================================================================== */
+function destPoint(lat, lon, bearingDeg, distanceKm) {
+  const R = 6371;
+  const brng = bearingDeg * Math.PI / 180;
+  const lat1 = lat * Math.PI / 180, lon1 = lon * Math.PI / 180;
+  const lat2 = Math.asin(Math.sin(lat1) * Math.cos(distanceKm / R) + Math.cos(lat1) * Math.sin(distanceKm / R) * Math.cos(brng));
+  const lon2 = lon1 + Math.atan2(
+    Math.sin(brng) * Math.sin(distanceKm / R) * Math.cos(lat1),
+    Math.cos(distanceKm / R) - Math.sin(lat1) * Math.sin(lat2)
+  );
+  return [lat2 * 180 / Math.PI, ((lon2 * 180 / Math.PI) + 540) % 360 - 180];
+}
+
+function haversineKm(lat1, lon1, lat2, lon2) {
+  const R = 6371;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+function bearingDeg(lat1, lon1, lat2, lon2) {
+  const phi1 = lat1 * Math.PI / 180, phi2 = lat2 * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const y = Math.sin(dLon) * Math.cos(phi2);
+  const x = Math.cos(phi1) * Math.sin(phi2) - Math.sin(phi1) * Math.cos(phi2) * Math.cos(dLon);
+  return (Math.atan2(y, x) * 180 / Math.PI + 360) % 360;
+}
+
+// Local flat-plane projection (fine at city scale) so we can find the foot
+// of the perpendicular from a pin onto a route segment.
+function toXY(lat, lon, refLat) {
+  const R = 6371;
+  const x = (lon * Math.PI / 180) * Math.cos(refLat * Math.PI / 180) * R;
+  const y = (lat * Math.PI / 180) * R;
+  return [x, y];
+}
+function fromXY(x, y, refLat) {
+  const R = 6371;
+  const lat = (y / R) * 180 / Math.PI;
+  const lon = (x / (R * Math.cos(refLat * Math.PI / 180))) * 180 / Math.PI;
+  return [lat, lon];
+}
+
+// Nearest point on segment A-B to point P, clamped to the segment (t in [0,1]).
+function footOfPerpendicular(aLat, aLon, bLat, bLon, pLat, pLon) {
+  const refLat = aLat;
+  const [ax, ay] = toXY(aLat, aLon, refLat);
+  const [bx, by] = toXY(bLat, bLon, refLat);
+  const [px, py] = toXY(pLat, pLon, refLat);
+  const dx = bx - ax, dy = by - ay;
+  const lenSq = dx * dx + dy * dy;
+  let t = lenSq > 0 ? ((px - ax) * dx + (py - ay) * dy) / lenSq : 0;
+  t = Math.max(0, Math.min(1, t));
+  const fx = ax + t * dx, fy = ay + t * dy;
+  const [flat, flon] = fromXY(fx, fy, refLat);
+  return { lat: flat, lon: flon, t };
+}
+
+// The ordered points that make up the loop before any bulges are added —
+// start, each stop in order, then back to start. Consecutive pairs are the
+// "edges" a bulge can attach to.
+// Given any ordered sequence of points, which consecutive pair (edge) is
+// closest to (lat, lon)? Shared by both the bulge feature and "slot this
+// stop into the route" placement — both boil down to the same question.
+function nearestEdgeInSequence(seq, lat, lon) {
+  let best = null, bestDist = Infinity;
+  for (let i = 0; i < seq.length - 1; i++) {
+    const a = seq[i], b = seq[i + 1];
+    if (!a || !b || a.lat == null || b.lat == null) continue;
+    const foot = footOfPerpendicular(a.lat, a.lon, b.lat, b.lon, lat, lon);
+    const d = haversineKm(foot.lat, foot.lon, lat, lon);
+    if (d < bestDist) {
+      bestDist = d;
+      best = {
+        edgeIndex: i, footLat: foot.lat, footLon: foot.lon, t: foot.t,
+        aLat: a.lat, aLon: a.lon, bLat: b.lat, bLon: b.lon,
+      };
+    }
+  }
+  return best;
+}
+
+// Which edge of the route (the segment between two consecutive stops, or
+// start/finish) is this pin actually closest to? Bulging that edge outward —
+// rather than sticking a spur off the single nearest point — is what makes
+// the route itself get bigger there, the way you'd draw it by hand. Works
+// for loops (wraps back to start) and end-to-end routes (runs to finish)
+// alike, since routeSequenceExcluding already builds the right sequence.
+function nearestRouteEdge(lat, lon) {
+  return nearestEdgeInSequence(routeSequenceExcluding(null).seq, lat, lon);
+}
+
+// The ordered route (start, other stops, then finish/start) with one
+// particular stop left out — used to work out where THAT stop should slot
+// back in, based on which edge of the rest of the route it's closest to.
+function routeSequenceExcluding(excludeId) {
+  const start = waypoints.find(w => w.role === 'start');
+  const finish = waypoints.find(w => w.role === 'finish');
+  const otherStops = waypoints.filter(w => w.role === 'stop' && w.id !== excludeId);
+  return { start, finish, otherStops, seq: loopMode ? [start, ...otherStops, start] : [start, ...otherStops, finish] };
+}
+
+// Komoot-style stop placement: figure out which edge of the rest of the
+// route this stop's coordinates land closest to, and re-splice it into the
+// waypoints array at that position instead of leaving it wherever it was
+// (typically the end).
+function insertStopAlongRoute(stop) {
+  const { start, finish, otherStops, seq } = routeSequenceExcluding(stop.id);
+  if (stop.lat == null) return;
+  const edge = nearestEdgeInSequence(seq, stop.lat, stop.lon);
+  const insertIdx = edge ? edge.edgeIndex : otherStops.length;
+  const newStops = [...otherStops.slice(0, insertIdx), stop, ...otherStops.slice(insertIdx)];
+  waypoints = [start, ...newStops, finish];
+}
+
+// The routed point for a bulge: from the foot of the edge it's bulging, head
+// toward the dropped pin. The push is HALF of "extend" — because inserting
+// this point between two existing stops means the route goes out to it and
+// back to rejoin the loop, so the actual distance added to the loop is
+// roughly double the push itself. Halving it here is what makes "extend"
+// track the real added distance instead of overshooting.
+function bulgeOutwardPoint(footLat, footLon, bulge) {
+  const brg = bearingDeg(footLat, footLon, bulge.lat, bulge.lon);
+  return destPoint(footLat, footLon, brg, (bulge.extendKm || 0) / 2);
+}
+
+function nearestWaypointDistanceTo(lat, lon) {
+  const start = waypoints.find(w => w.role === 'start');
+  const finish = waypoints.find(w => w.role === 'finish');
+  const stops = waypoints.filter(w => w.role === 'stop');
+  const candidates = [start, finish, ...stops].filter(w => w && w.lat != null);
+  let best = Infinity;
+  candidates.forEach(c => {
+    const d = haversineKm(c.lat, c.lon, lat, lon);
+    if (d < best) best = d;
+  });
+  return best;
+}
+
+// Does this bulge still make sense? Two independent checks:
+// 1) Is a real waypoint already sitting right where the pin is? If so the
+//    intended area is already visited — no detour needed, no matter how big
+//    "extend" is set to. (This is what catches "I added a stop right where
+//    my bulge was pointing" — the push distance itself is irrelevant here.)
+// 2) Even if not, does actually inserting the push-point add any meaningful
+//    distance versus going straight across this edge? Catches the case where
+//    the edge has simply gotten short enough that the detour is trivial.
+function bulgeSuppressed(b) {
+  const pinCoverage = nearestWaypointDistanceTo(b.lat, b.lon);
+  if (pinCoverage <= 0.35) return true;
+
+  const edge = nearestRouteEdge(b.lat, b.lon);
+  if (!edge) return false;
+  const [tLat, tLon] = bulgeOutwardPoint(edge.footLat, edge.footLon, b);
+  const straight = haversineKm(edge.aLat, edge.aLon, edge.bLat, edge.bLon);
+  const detour = haversineKm(edge.aLat, edge.aLon, tLat, tLon) + haversineKm(tLat, tLon, edge.bLat, edge.bLon);
+  const addedKm = detour - straight;
+  return addedKm <= 0.25; // less than ~250m actually added — not worth a detour
+}
+
+function activeWaypoints() {
+  const start = waypoints.find(w => w.role === 'start');
+  const stops = waypoints.filter(w => w.role === 'stop');
+  const finish = waypoints.find(w => w.role === 'finish');
+  const seq = loopMode ? [start, ...stops, start] : [start, ...stops, finish];
+
+  const bulgesWithEdge = loopBulges
+    .filter(b => !bulgeSuppressed(b))
+    .map(b => ({ b, edge: nearestRouteEdge(b.lat, b.lon) }))
+    .filter(x => x.edge);
+
+  const list = [];
+  for (let i = 0; i < seq.length - 1; i++) {
+    // Push the point that starts this edge (skip the very last synthetic
+    // wraparound point used only for edge indexing in loop mode — the real
+    // finish is added below either way).
+    if (i === 0) list.push(start);
+    else list.push(stops[i - 1]);
+
+    bulgesWithEdge
+      .filter(x => x.edge.edgeIndex === i)
+      .sort((x, y) => x.edge.t - y.edge.t)
+      .forEach(({ b, edge }) => {
+        const [lat, lon] = bulgeOutwardPoint(edge.footLat, edge.footLon, b);
+        list.push({ id: 'bulge-' + b.id, role: 'stop', lat, lon, label: 'Bulge (auto)' });
+      });
+  }
+
+  if (loopMode) {
+    list.push({ ...start, id: 'loop-finish', role: 'finish' });
+  } else {
+    list.push(finish);
+  }
+  return list;
+}
+
+function roleColor(role) {
+  if (role === 'start') return '#d7e34c';
+  if (role === 'finish') return '#c25a3f';
+  return '#eae6dc';
+}
+
+function roleLabel(wp, stopIdx) {
+  if (wp.role === 'start') return 'Start';
+  if (wp.role === 'finish') return 'Finish';
+  return 'Stop ' + stopIdx;
+}
+
+// Start and finish get letters, stops get plain numbers starting at 1 — kept
+// identical across the map pins, the stop list, and the leg list so "3" on
+// the map always means the same point as "3" everywhere else.
+function waypointBadge(wp, stopIdx) {
+  if (wp.role === 'start') return 'A';
+  if (wp.role === 'finish') return 'B';
+  return String(stopIdx);
+}
+
+function renderMarkers() {
+  Object.values(wpMarkers).forEach(m => map.removeLayer(m));
+  wpMarkers = {};
+  const list = loopMode ? waypoints.filter(w => w.role !== 'finish') : waypoints;
+  let stopCounter = 0;
+  list.forEach((wp) => {
+    if (wp.lat == null) return;
+    if (wp.role === 'stop') stopCounter++;
+    const badge = waypointBadge(wp, stopCounter);
+    const isArmed = armedId === wp.id;
+    const color = roleColor(wp.role);
+    const ring = isArmed ? '3px solid #d7e34c' : '2px solid #23262b';
+    const icon = L.divIcon({
+      className: '',
+      html: `<div style="width:20px;height:20px;border-radius:50%;background:${color};border:${ring};box-shadow:0 1px 4px rgba(0,0,0,0.4)${isArmed ? ', 0 0 0 3px rgba(215,227,76,0.35)' : ''};display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;font-family:sans-serif;color:#23262b;">${badge}</div>`,
+      iconSize: [20, 20], iconAnchor: [10, 10],
+    });
+    const marker = L.marker([wp.lat, wp.lon], { icon }).addTo(map);
+    // Clicking a pin directly selects it for moving — same as the target
+    // button, just without needing the (often-collapsed) list open. Clicking
+    // an already-armed STOP again removes it (start/finish just deselect,
+    // since they can't be removed the same way).
+    marker.on('click', (e) => {
+      L.DomEvent.stopPropagation(e);
+      if (isArmed && wp.role === 'stop') {
+        pushUndo('remove stop');
+        waypoints = waypoints.filter(w => w.id !== wp.id);
+        armedId = null;
+        renderWaypointRows();
+        renderMarkers();
+        scheduleAutoReplot();
+        return;
+      }
+      armedId = (armedId === wp.id) ? null : wp.id;
+      if (armedId != null) {
+        newStopArmed = false; disarmAvoid(); disarmBan(); disarmBulge(); updateAddStopBtnUI();
+        const tipText = wp.role === 'stop'
+          ? 'Click elsewhere to move it, click again to remove it'
+          : 'Click elsewhere to move it';
+        marker.bindTooltip(tipText, { direction: 'top', offset: [0, -12], className: 'wp-tooltip' }).openTooltip();
+        setTimeout(() => { if (marker.isTooltipOpen && marker.isTooltipOpen()) marker.closeTooltip(); }, 4000);
+      }
+      renderWaypointRows();
+      renderMarkers();
+    });
+    wpMarkers[wp.id] = marker;
+  });
+  renderBulgeMarkers();
+  if (loopBulges.length) renderBulgeRows();
+  updateGoState();
+}
+
+/* Two markers per bulge: a draggable pin (what the user placed / can drag),
+   and a small dashed outward marker showing where the "extend" value actually
+   routes through. Both update live as you drag or edit extend. The edge
+   (nearest segment of the loop) is recomputed each time, since dragging the
+   pin near a different pair of stops should re-anchor it there. */
+let bulgePinMarkers = {};
+let bulgeOutMarkers = {};
+
+// Grey when the route already gets close enough here that this bulge isn't
+// actually adding a detour (see bulgeSuppressed) — lime when it's live.
+function bulgePinIcon(suppressed) {
+  const color = suppressed ? '#7d828d' : '#d7e34c';
+  return L.divIcon({
+    className: '',
+    html: `<div style="width:18px;height:18px;border-radius:50% 50% 50% 0;background:${color};border:2px solid #23262b;transform:rotate(-45deg);box-shadow:0 1px 4px rgba(0,0,0,0.4);"></div>`,
+    iconSize: [18, 18], iconAnchor: [9, 17],
+  });
+}
+
+function renderBulgeMarkers() {
+  Object.values(bulgePinMarkers).forEach(m => map.removeLayer(m));
+  Object.values(bulgeOutMarkers).forEach(m => map.removeLayer(m));
+  bulgePinMarkers = {};
+  bulgeOutMarkers = {};
+  const start = waypoints.find(w => w.role === 'start');
+  if (!start || start.lat == null) return;
+
+  loopBulges.forEach(b => {
+    const suppressed = bulgeSuppressed(b);
+    const pin = L.marker([b.lat, b.lon], {
+      icon: bulgePinIcon(suppressed), draggable: true, opacity: suppressed ? 0.6 : 0.95,
+      title: suppressed ? 'Already covered — this bulge isn\'t adding a detour right now' : '',
+    }).addTo(map);
+    pin.on('drag', (e) => {
+      b.lat = e.target.getLatLng().lat;
+      b.lon = e.target.getLatLng().lng;
+      updateSingleBulgeOutMarker(b);
+      // Live feedback on the pin itself too, not just the dashed target —
+      // dragging toward/away from another stop can flip suppression mid-drag.
+      const nowSuppressed = bulgeSuppressed(b);
+      pin.setIcon(bulgePinIcon(nowSuppressed));
+      pin.setOpacity(nowSuppressed ? 0.6 : 0.95);
+    });
+    pin.on('dragend', () => { renderBulgeRows(); updateGoState(); scheduleAutoReplot(); });
+    bulgePinMarkers[b.id] = pin;
+    updateSingleBulgeOutMarker(b);
+  });
+}
+
+function updateSingleBulgeOutMarker(b) {
+  if (bulgeOutMarkers[b.id]) { map.removeLayer(bulgeOutMarkers[b.id]); }
+  const edge = nearestRouteEdge(b.lat, b.lon);
+  if (!edge) return;
+  const [lat, lon] = bulgeOutwardPoint(edge.footLat, edge.footLon, b);
+  const suppressed = bulgeSuppressed(b);
+  const borderColor = suppressed ? '#7d828d' : '#d7e34c';
+  const icon = L.divIcon({
+    className: '',
+    html: `<div style="width:14px;height:14px;border-radius:4px;background:transparent;border:2.5px dashed ${borderColor};"></div>`,
+    iconSize: [14, 14], iconAnchor: [7, 7],
+  });
+  bulgeOutMarkers[b.id] = L.marker([lat, lon], { icon, opacity: suppressed ? 0.5 : 0.9, interactive: false }).addTo(map);
+}
+
+
+
+
+function updateGoState() {
+  const list = activeWaypoints();
+  const allSet = list.length >= 2 && list.every(w => w.lat != null);
+  goBtn.disabled = !allSet;
+  mapEmpty.style.display = allSet ? 'none' : 'flex';
+}
+
+let stopsListExpanded = false;
+let legsListExpanded = false;
+
+function buildWaypointRow(wp, stopCounter) {
+  const row = document.createElement('div');
+  row.className = 'wp-row';
+
+  const label = document.createElement('label');
+  label.style.cursor = 'pointer';
+  label.title = 'Click to highlight this point on the map';
+  const badge = document.createElement('span');
+  badge.textContent = waypointBadge(wp, stopCounter);
+  badge.style.cssText = `display:inline-flex; align-items:center; justify-content:center; width:16px; height:16px; border-radius:50%; background:${roleColor(wp.role)}; color:#23262b; font-size:9px; font-weight:700; flex-shrink:0;`;
+  label.appendChild(badge);
+  label.appendChild(document.createTextNode(roleLabel(wp, stopCounter)));
+  label.addEventListener('click', () => highlightWaypoint(wp));
+  row.appendChild(label);
+
+  const group = document.createElement('div');
+  group.className = 'wp-input-group';
+
+  const targetBtn = document.createElement('button');
+  targetBtn.type = 'button';
+  targetBtn.className = 'icon-btn' + (armedId === wp.id ? ' armed' : '');
+  targetBtn.textContent = '◎';
+  targetBtn.title = 'Click, then tap the map (or just click its pin on the map directly)';
+  targetBtn.addEventListener('click', () => {
+    armedId = (armedId === wp.id) ? null : wp.id;
+    if (armedId != null) { newStopArmed = false; disarmAvoid(); disarmBan(); disarmBulge(); updateAddStopBtnUI(); }
+    renderWaypointRows();
+    renderMarkers();
+  });
+  group.appendChild(targetBtn);
+
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.placeholder = 'Name, address, or use the target';
+  input.value = wp.label;
+  input.addEventListener('input', () => { wp.label = input.value; });
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') handleAddressEnter(wp.id, input);
+  });
+  group.appendChild(input);
+
+  if (wp.role === 'stop') {
+    const removeBtn = document.createElement('button');
+    removeBtn.type = 'button';
+    removeBtn.className = 'icon-btn remove';
+    removeBtn.textContent = '×';
+    removeBtn.title = 'Remove stop';
+    removeBtn.addEventListener('click', () => {
+      pushUndo('remove stop');
+      waypoints = waypoints.filter(w => w.id !== wp.id);
+      renderWaypointRows();
+      renderMarkers();
+      scheduleAutoReplot();
+    });
+    group.appendChild(removeBtn);
+  }
+
+  row.appendChild(group);
+  return row;
+}
+
+function renderWaypointRows() {
+  wpContainer.innerHTML = '';
+  const visible = loopMode ? waypoints.filter(w => w.role !== 'finish') : waypoints;
+  const start = visible.find(w => w.role === 'start');
+  const stops = visible.filter(w => w.role === 'stop');
+  const finish = visible.find(w => w.role === 'finish');
+
+  if (start) wpContainer.appendChild(buildWaypointRow(start, 0));
+
+  if (stops.length) {
+    const toggleRow = document.createElement('div');
+    toggleRow.style.cssText = 'font-size:11px; color:#9aa0ac; cursor:pointer; display:flex; align-items:center; gap:6px; padding:4px 2px; user-select:none;';
+    toggleRow.textContent = `Stops (${stops.length}) ${stopsListExpanded ? '▾' : '▸'}`;
+    toggleRow.title = 'Show/hide the full stop list — you usually don\'t need this, just click pins on the map';
+    toggleRow.addEventListener('click', () => {
+      stopsListExpanded = !stopsListExpanded;
+      renderWaypointRows();
+    });
+    wpContainer.appendChild(toggleRow);
+
+    if (stopsListExpanded) {
+      stops.forEach((wp, i) => wpContainer.appendChild(buildWaypointRow(wp, i + 1)));
+    }
+  }
+
+  if (finish) wpContainer.appendChild(buildWaypointRow(finish, 0));
+}
+
+function armNextEmpty(afterId) {
+  const order = loopMode ? waypoints.filter(w => w.role !== 'finish') : waypoints;
+  const idx = order.findIndex(w => w.id === afterId);
+  for (let i = idx + 1; i < order.length; i++) {
+    if (order[i].lat == null) { armedId = order[i].id; return; }
+  }
+  armedId = null;
+}
+
+
+function setWaypointCoords(id, lat, lon, label) {
+  const wp = waypoints.find(w => w.id === id);
+  if (!wp) return;
+  wp.lat = lat; wp.lon = lon;
+  if (label) wp.label = label;
+  if (wp.role === 'stop' && addStopMode === 'along') {
+    insertStopAlongRoute(wp);
+  }
+  renderMarkers();
+  renderWaypointRows();
+  scheduleAutoReplot();
+}
+
+stopModeAlong.addEventListener('change', () => {
+  addStopMode = stopModeAlong.checked ? 'along' : 'end';
+});
+
+function updateAddStopBtnUI() {
+  addStopBtn.classList.toggle('armed', newStopArmed);
+  addStopBtn.textContent = newStopArmed ? '+ Tap the map to place it…' : '+ Add a stop';
+}
+
+addStopBtn.addEventListener('click', () => {
+  newStopArmed = !newStopArmed;
+  if (newStopArmed) { armedId = null; disarmAvoid(); disarmBan(); disarmBulge(); renderWaypointRows(); renderMarkers(); }
+  updateAddStopBtnUI();
+});
+
+function createStopAt(lat, lon) {
+  const id = nextId++;
+  const stop = { id, role: 'stop', lat, lon, label: '' };
+  if (addStopMode === 'along') {
+    // Splice straight into wherever it belongs along the route.
+    const { start, finish, otherStops } = routeSequenceExcluding(null);
+    const seq = loopMode ? [start, ...otherStops, start] : [start, ...otherStops, finish];
+    const edge = nearestEdgeInSequence(seq, lat, lon);
+    const insertIdx = edge ? edge.edgeIndex : otherStops.length;
+    const newStops = [...otherStops.slice(0, insertIdx), stop, ...otherStops.slice(insertIdx)];
+    waypoints = [start, ...newStops, finish];
+  } else {
+    const finishIdx = waypoints.findIndex(w => w.role === 'finish');
+    const insertAt = loopMode ? waypoints.length : finishIdx;
+    waypoints.splice(insertAt, 0, stop);
+  }
+  newStopArmed = false;
+  updateAddStopBtnUI();
+  renderWaypointRows();
+  renderMarkers();
+  scheduleAutoReplot();
+}
+
+clearStopsBtn.addEventListener('click', () => {
+  const hadStops = waypoints.some(w => w.role === 'stop');
+  if (!hadStops) return;
+  pushUndo('clear all stops');
+  waypoints = waypoints.filter(w => w.role !== 'stop');
+  stopsListExpanded = false;
+  renderWaypointRows();
+  renderMarkers();
+  statusEl.textContent = 'Cleared all stops — start, finish, and any bulges are untouched.';
+  statusEl.className = '';
+  scheduleAutoReplot();
+});
+
+loopCheck.addEventListener('change', () => {
+  loopMode = loopCheck.checked;
+  renderWaypointRows();
+  renderMarkers();
+  renderBulgeRows();
+  scheduleAutoReplot();
+});
+
+reverseRouteBtn.addEventListener('click', () => {
+  const start = waypoints.find(w => w.role === 'start');
+  const finish = waypoints.find(w => w.role === 'finish');
+  const stops = waypoints.filter(w => w.role === 'stop');
+  if (!start || start.lat == null) {
+    statusEl.textContent = 'Set a start point first.';
+    statusEl.className = 'err';
+    return;
+  }
+  pushUndo('reverse route');
+  stops.reverse();
+  if (!loopMode) {
+    // Point-to-point: swap start and finish outright.
+    const tmpLat = start.lat, tmpLon = start.lon, tmpLabel = start.label;
+    start.lat = finish.lat; start.lon = finish.lon; start.label = finish.label;
+    finish.lat = tmpLat; finish.lon = tmpLon; finish.label = tmpLabel;
+  }
+  // Loop mode: start/finish are the same point, so just riding the stops in
+  // reverse order flips the direction of travel around the loop.
+  waypoints = [start, ...stops, finish];
+  armedId = null;
+  renderWaypointRows();
+  renderMarkers();
+  statusEl.textContent = 'Route reversed.';
+  statusEl.className = '';
+  scheduleAutoReplot();
+});
+
+/* ---------- Loop bulges ---------- */
+function disarmBulge() {
+  bulgeArmed = false;
+  bulgeBtn.classList.remove('armed');
+  bulgeBtn.textContent = '📍 Drop a bulge toward an area';
+}
+
+bulgeBtn.addEventListener('click', () => {
+  bulgeArmed = !bulgeArmed;
+  if (bulgeArmed) { armedId = null; newStopArmed = false; updateAddStopBtnUI(); disarmAvoid(); disarmBan(); renderWaypointRows(); renderMarkers(); }
+  bulgeBtn.classList.toggle('armed', bulgeArmed);
+  bulgeBtn.textContent = bulgeArmed ? '📍 Tap the map to drop a pin…' : '📍 Drop a bulge toward an area';
+});
+
+function addBulge(lat, lon) {
+  const id = nextId++;
+  const edge = nearestRouteEdge(lat, lon);
+  // Default "extend" so the pushed-out point lands roughly where you dropped
+  // the pin. Since the actual push is extend/2 (see bulgeOutwardPoint), that
+  // means extend = 2x the distance from the edge to the pin.
+  const initialExtend = edge
+    ? Math.max(0.5, Math.round(haversineKm(edge.footLat, edge.footLon, lat, lon) * 2 * 10) / 10)
+    : 2;
+  loopBulges.push({ id, lat, lon, extendKm: initialExtend });
+  renderBulgeMarkers();
+  renderBulgeRows();
+  updateGoState();
+  scheduleAutoReplot();
+}
+
+function renderBulgeRows() {
+  bulgeListEl.innerHTML = '';
+  loopBulges.forEach((b) => {
+    const suppressed = bulgeSuppressed(b);
+    const row = document.createElement('div');
+    row.className = 'item-row';
+    row.style.cssText = 'flex-direction:column; align-items:stretch; gap:6px;' + (suppressed ? ' opacity:0.55;' : '');
+
+    const topLine = document.createElement('div');
+    topLine.style.cssText = 'display:flex; align-items:center; gap:6px;';
+
+    const dot = document.createElement('span');
+    dot.className = 'dot';
+    dot.style.background = suppressed ? '#7d828d' : '#d7e34c';
+    topLine.appendChild(dot);
+
+    const label = document.createElement('span');
+    label.style.flex = '1'; label.style.color = '#d8dbe0';
+    label.textContent = 'Bulge ' + b.id + (suppressed ? ' · already covered' : '');
+    label.title = suppressed ? 'Your route already comes close enough here — this bulge isn\'t adding a detour right now.' : '';
+    topLine.appendChild(label);
+
+    const removeBtn = document.createElement('button');
+    removeBtn.type = 'button';
+    removeBtn.className = 'icon-btn remove';
+    removeBtn.textContent = '×';
+    removeBtn.addEventListener('click', () => {
+      pushUndo('remove bulge');
+      loopBulges = loopBulges.filter(x => x.id !== b.id);
+      renderBulgeMarkers();
+      renderBulgeRows();
+      updateGoState();
+      scheduleAutoReplot();
+    });
+    topLine.appendChild(removeBtn);
+    row.appendChild(topLine);
+
+    const sliderRow = document.createElement('div');
+    sliderRow.style.cssText = 'display:flex; align-items:center; gap:8px;';
+
+    const extendSlider = document.createElement('input');
+    extendSlider.type = 'range';
+    extendSlider.min = '0'; extendSlider.max = '40'; extendSlider.step = '0.5';
+    extendSlider.value = b.extendKm;
+    extendSlider.style.cssText = 'flex:1; accent-color:var(--lime);';
+    extendSlider.title = 'Roughly how much extra distance this bulge adds, in km — drag and watch the route update';
+
+    const valLabel = document.createElement('span');
+    valLabel.style.cssText = 'flex-shrink:0; width:56px; text-align:right; font-variant-numeric:tabular-nums; color:#d8dbe0; font-size:12px;';
+    valLabel.textContent = Number(b.extendKm).toFixed(1) + ' km';
+
+    extendSlider.addEventListener('input', () => {
+      b.extendKm = parseFloat(extendSlider.value) || 0;
+      valLabel.textContent = b.extendKm.toFixed(1) + ' km';
+      updateSingleBulgeOutMarker(b);
+      // Live pin colour too, same as dragging the pin itself — suppression
+      // can flip as you slide past the "already covered" point.
+      const nowSuppressed = bulgeSuppressed(b);
+      const pin = bulgePinMarkers[b.id];
+      if (pin) { pin.setIcon(bulgePinIcon(nowSuppressed)); pin.setOpacity(nowSuppressed ? 0.6 : 0.95); }
+      updateGoState();
+      scheduleAutoReplot();
+    });
+    extendSlider.addEventListener('change', () => {
+      renderBulgeRows(); // sync the grey/label text once they let go of the slider
+    });
+
+    sliderRow.appendChild(extendSlider);
+    sliderRow.appendChild(valLabel);
+    row.appendChild(sliderRow);
+
+    bulgeListEl.appendChild(row);
+  });
+}
+
+/* ========================================================================
+   GEOCODING
+   ======================================================================== */
+async function geocode(query) {
+  const url = `https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(query)}`;
+  const res = await fetch(url, { headers: { 'Accept': 'application/json' } });
+  if (!res.ok) throw new Error('Geocoding failed');
+  const data = await res.json();
+  if (!data.length) throw new Error('No location found for "' + query + '"');
+  return { lat: parseFloat(data[0].lat), lon: parseFloat(data[0].lon), label: data[0].display_name };
+}
+
+async function handleAddressEnter(wpId, inputEl) {
+  const q = inputEl.value.trim();
+  if (!q) return;
+  statusEl.textContent = 'Looking up "' + q + '"…';
+  statusEl.className = '';
+  try {
+    const loc = await geocode(q);
+    setWaypointCoords(wpId, loc.lat, loc.lon, loc.label.split(',').slice(0, 3).join(','));
+    map.panTo([loc.lat, loc.lon]);
+    armNextEmpty(wpId);
+    renderWaypointRows();
+    renderMarkers();
+    statusEl.textContent = '';
+  } catch (err) {
+    statusEl.textContent = err.message;
+    statusEl.className = 'err';
+  }
+}
+
+/* ========================================================================
+   AREAS TO AVOID (nogo circles)
+   ======================================================================== */
+function disarmAvoid() {
+  nogoArmed = false;
+  avoidBtn.classList.remove('armed');
+  avoidBtn.textContent = '◎ Mark an area to avoid';
+  avoidHint.style.display = 'none';
+}
+
+avoidBtn.addEventListener('click', () => {
+  nogoArmed = !nogoArmed;
+  if (nogoArmed) { armedId = null; newStopArmed = false; updateAddStopBtnUI(); disarmBan(); disarmBulge(); renderWaypointRows(); renderMarkers(); }
+  avoidBtn.classList.toggle('armed', nogoArmed);
+  avoidBtn.textContent = nogoArmed ? '◎ Tap the map to mark…' : '◎ Mark an area to avoid';
+  avoidHint.style.display = nogoArmed ? 'block' : 'none';
+});
+
+function addNogo(lat, lon) {
+  const id = nextId++;
+  nogos.push({ id, lat, lon, radius: DEFAULT_NOGO_RADIUS, name: 'Avoid zone ' + id });
+  renderNogos();
+  scheduleAutoReplot();
+}
+
+let nogoHandles = {}; // draggable center handle per nogo, for repositioning
+function renderNogos() {
+  Object.values(nogoCircles).forEach(c => map.removeLayer(c));
+  Object.values(nogoHandles).forEach(h => map.removeLayer(h));
+  nogoCircles = {};
+  nogoHandles = {};
+  nogos.forEach(n => {
+    nogoCircles[n.id] = L.circle([n.lat, n.lon], {
+      radius: n.radius, color: '#c25a3f', weight: 1.5,
+      fillColor: '#c25a3f', fillOpacity: 0.22, dashArray: '4 3',
+    }).addTo(map);
+
+    const handleIcon = L.divIcon({
+      className: '',
+      html: `<div style="width:14px;height:14px;border-radius:50%;background:#c25a3f;border:2px solid #23262b;cursor:move;box-shadow:0 1px 3px rgba(0,0,0,0.4);"></div>`,
+      iconSize: [14, 14], iconAnchor: [7, 7],
+    });
+    const handle = L.marker([n.lat, n.lon], { icon: handleIcon, draggable: true, title: 'Drag to move this avoid zone' }).addTo(map);
+    handle.on('drag', (e) => {
+      n.lat = e.target.getLatLng().lat;
+      n.lon = e.target.getLatLng().lng;
+      if (nogoCircles[n.id]) nogoCircles[n.id].setLatLng(e.target.getLatLng());
+    });
+    handle.on('dragend', () => { scheduleAutoReplot(); });
+    nogoHandles[n.id] = handle;
+  });
+  renderNogoRows();
+}
+
+function renderNogoRows() {
+  const listEl = document.getElementById('nogo-list');
+  listEl.innerHTML = '';
+  nogos.forEach((n) => {
+    const row = document.createElement('div');
+    row.className = 'item-row';
+
+    const dot = document.createElement('span');
+    dot.className = 'dot avoid';
+    row.appendChild(dot);
+
+    const nameInput = document.createElement('input');
+    nameInput.type = 'text';
+    nameInput.value = n.name;
+    nameInput.addEventListener('input', () => { n.name = nameInput.value; });
+    row.appendChild(nameInput);
+
+    const radiusInput = document.createElement('input');
+    radiusInput.type = 'number';
+    radiusInput.min = '15'; radiusInput.max = '2000'; radiusInput.step = '5';
+    radiusInput.value = n.radius;
+    radiusInput.addEventListener('input', () => {
+      n.radius = parseInt(radiusInput.value, 10) || DEFAULT_NOGO_RADIUS;
+      if (nogoCircles[n.id]) nogoCircles[n.id].setRadius(n.radius);
+      scheduleAutoReplot();
+    });
+    row.appendChild(radiusInput);
+
+    const unit = document.createElement('span');
+    unit.className = 'meta'; unit.textContent = 'm';
+    row.appendChild(unit);
+
+    const removeBtn = document.createElement('button');
+    removeBtn.type = 'button';
+    removeBtn.className = 'icon-btn remove';
+    removeBtn.textContent = '×';
+    removeBtn.addEventListener('click', () => {
+      pushUndo('remove avoid zone');
+      nogos = nogos.filter(x => x.id !== n.id);
+      renderNogos();
+      scheduleAutoReplot();
+    });
+    row.appendChild(removeBtn);
+
+    listEl.appendChild(row);
+  });
+}
+
+/* ========================================================================
+   BAN A SPECIFIC ROAD (nogo polyline)
+   ======================================================================== */
+function disarmBan() {
+  banArmed = false;
+  banBtn.classList.remove('armed');
+  banBtn.textContent = '⛔ Trace a road to ban';
+  banHint.style.display = 'none';
+  banFinishBtn.style.display = 'none';
+  clearBanDraft();
+}
+
+function clearBanDraft() {
+  banDraft = null;
+  if (banDraftLine) { map.removeLayer(banDraftLine); banDraftLine = null; }
+  banPointMarkers.forEach(m => map.removeLayer(m));
+  banPointMarkers = [];
+}
+
+banBtn.addEventListener('click', () => {
+  banArmed = !banArmed;
+  if (banArmed) {
+    armedId = null; newStopArmed = false; updateAddStopBtnUI(); disarmAvoid(); disarmBulge(); renderWaypointRows(); renderMarkers();
+    banDraft = { points: [] };
+  } else {
+    clearBanDraft();
+  }
+  banBtn.classList.toggle('armed', banArmed);
+  banBtn.textContent = banArmed ? '⛔ Tap along the road…' : '⛔ Trace a road to ban';
+  banHint.style.display = banArmed ? 'block' : 'none';
+  banFinishBtn.style.display = 'none';
+});
+
+function addBanPoint(lat, lon) {
+  if (!banDraft) banDraft = { points: [] };
+  banDraft.points.push([lat, lon]);
+
+  const marker = L.circleMarker([lat, lon], {
+    radius: 4, color: '#8b3a2b', fillColor: '#8b3a2b', fillOpacity: 1, weight: 1
+  }).addTo(map);
+  banPointMarkers.push(marker);
+
+  if (banDraftLine) map.removeLayer(banDraftLine);
+  if (banDraft.points.length >= 2) {
+    banDraftLine = L.polyline(banDraft.points, { color: '#8b3a2b', weight: 4, dashArray: '2 5' }).addTo(map);
+  }
+  banFinishBtn.style.display = banDraft.points.length >= 2 ? 'block' : 'none';
+}
+
+banFinishBtn.addEventListener('click', () => {
+  if (!banDraft || banDraft.points.length < 2) return;
+  const id = nextId++;
+  roadBans.push({ id, points: banDraft.points, name: 'Banned road ' + id });
+  clearBanDraft();
+  banDraft = { points: [] };
+  banFinishBtn.style.display = 'none';
+  renderBans();
+  scheduleAutoReplot();
+});
+
+function renderBans() {
+  Object.values(banLines).forEach(l => map.removeLayer(l));
+  banLines = {};
+  roadBans.forEach(rb => {
+    banLines[rb.id] = L.polyline(rb.points, { color: '#8b3a2b', weight: 4.5, opacity: 0.85 }).addTo(map);
+  });
+  renderBanRows();
+}
+
+function renderBanRows() {
+  const listEl = document.getElementById('ban-list');
+  listEl.innerHTML = '';
+  roadBans.forEach((rb) => {
+    const row = document.createElement('div');
+    row.className = 'item-row';
+
+    const dot = document.createElement('span');
+    dot.className = 'dot ban';
+    row.appendChild(dot);
+
+    const nameInput = document.createElement('input');
+    nameInput.type = 'text';
+    nameInput.value = rb.name;
+    nameInput.addEventListener('input', () => { rb.name = nameInput.value; });
+    row.appendChild(nameInput);
+
+    const meta = document.createElement('span');
+    meta.className = 'meta'; meta.textContent = rb.points.length + ' pts';
+    row.appendChild(meta);
+
+    const removeBtn = document.createElement('button');
+    removeBtn.type = 'button';
+    removeBtn.className = 'icon-btn remove';
+    removeBtn.textContent = '×';
+    removeBtn.addEventListener('click', () => {
+      pushUndo('remove road ban');
+      roadBans = roadBans.filter(x => x.id !== rb.id);
+      renderBans();
+      scheduleAutoReplot();
+    });
+    row.appendChild(removeBtn);
+
+    listEl.appendChild(row);
+  });
+}
+
+/* ========================================================================
+   MAP CLICK ROUTER
+   ======================================================================== */
+map.on('click', (e) => {
+  if (banArmed) { addBanPoint(e.latlng.lat, e.latlng.lng); return; }
+  if (nogoArmed) { addNogo(e.latlng.lat, e.latlng.lng); return; }
+  if (bulgeArmed) {
+    if (!waypoints.find(w => w.role === 'start')?.lat) {
+      statusEl.textContent = 'Set a start point first — bulges anchor to your route.';
+      statusEl.className = 'err';
+      return;
+    }
+    addBulge(e.latlng.lat, e.latlng.lng);
+    return;
+  }
+  if (newStopArmed) { createStopAt(e.latlng.lat, e.latlng.lng); return; }
+  if (armedId == null) return;
+  setWaypointCoords(armedId, e.latlng.lat, e.latlng.lng, null);
+  armNextEmpty(armedId);
+  renderWaypointRows();
+  renderMarkers();
+});
+
+/* ========================================================================
+   PROFILES + ADVANCED TUNING
+   ======================================================================== */
+function renderProfiles() {
+  profilesEl.innerHTML = '';
+  PROFILES.forEach(p => {
+    const btn = document.createElement('button');
+    btn.className = 'profile-btn' + (p.id === selectedProfile ? ' active' : '');
+    btn.type = 'button';
+    btn.innerHTML = `<strong>${p.label}</strong><span>${p.desc}</span>`;
+    btn.addEventListener('click', () => { selectedProfile = p.id; renderProfiles(); scheduleAutoReplot(); });
+    profilesEl.appendChild(btn);
+  });
+}
+
+function renderAdvancedToggles() {
+  advToggles.innerHTML = '';
+  ADVANCED_OPTIONS.forEach(o => {
+    const row = document.createElement('label');
+    row.className = 'toggle-row';
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.checked = !!advancedState[o.id];
+    cb.addEventListener('change', () => { advancedState[o.id] = cb.checked; scheduleAutoReplot(); });
+    row.appendChild(cb);
+    row.appendChild(document.createTextNode(o.label));
+    advToggles.appendChild(row);
+  });
+}
+
+advToggleLbl.addEventListener('click', () => {
+  const open = advPanel.style.display !== 'none';
+  advPanel.style.display = open ? 'none' : 'flex';
+  advToggleLbl.textContent = open ? 'Fine-tune ▸' : 'Fine-tune ▾';
+});
+
+hillSlider.addEventListener('input', () => {
+  hillAvoidance = parseInt(hillSlider.value, 10);
+  hillSliderVal.textContent = hillAvoidance === 0 ? 'off' : String(hillAvoidance);
+  scheduleAutoReplot();
+});
+
+elevSlider.addEventListener('input', () => {
+  elevSensitivity = parseFloat(elevSlider.value);
+  elevSliderVal.textContent = elevSensitivity.toFixed(1) + '%';
+  scheduleAutoReplot();
+});
+
+function buildAdvancedParams() {
+  let params = '';
+  ADVANCED_OPTIONS.forEach(o => {
+    params += `&profile:${o.param}=${advancedState[o.id] ? o.on : o.off}`;
+  });
+  params += `&profile:uphillcost=${hillAvoidance}&profile:downhillcost=${Math.max(hillAvoidance, 60)}`;
+  params += `&profile:uphillcutoff=${elevSensitivity}&profile:downhillcutoff=${elevSensitivity}`;
+  return params;
+}
+
+/* ========================================================================
+   GPX IMPORT
+   ======================================================================== */
+importBtn.addEventListener('click', () => fileInput.click());
+
+fileInput.addEventListener('change', () => {
+  const file = fileInput.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    try {
+      const xml = new DOMParser().parseFromString(reader.result, 'application/xml');
+      if (xml.querySelector('parsererror')) throw new Error('Could not parse that GPX file.');
+      let pts = Array.from(xml.querySelectorAll('trkpt'));
+      if (!pts.length) pts = Array.from(xml.querySelectorAll('rtept'));
+      if (!pts.length) throw new Error('No track points found in that file.');
+      importedTrack = pts.map(p => [parseFloat(p.getAttribute('lat')), parseFloat(p.getAttribute('lon'))]);
+
+      if (importedTrackLine) map.removeLayer(importedTrackLine);
+      importedTrackLine = L.polyline(importedTrack, { color: '#6b7280', weight: 4, opacity: 0.8, dashArray: '1 8' }).addTo(map);
+      map.fitBounds(importedTrackLine.getBounds(), { padding: [40, 40] });
+
+      importActions.style.display = 'flex';
+      statusEl.className = '';
+      statusEl.textContent = 'Imported ' + importedTrack.length + ' track points.';
+    } catch (err) {
+      statusEl.className = 'err';
+      statusEl.textContent = err.message;
+    }
+  };
+  reader.readAsText(file);
+  fileInput.value = '';
+});
+
+importUseStart.addEventListener('click', () => {
+  if (!importedTrack) return;
+  const [lat, lon] = importedTrack[0];
+  const startWp = waypoints.find(w => w.role === 'start');
+  setWaypointCoords(startWp.id, lat, lon, 'Imported start');
+});
+
+importUseFinish.addEventListener('click', () => {
+  if (!importedTrack) return;
+  const [lat, lon] = importedTrack[importedTrack.length - 1];
+  if (loopMode) { statusEl.textContent = 'Turn off loop mode to set a separate finish.'; return; }
+  const finishWp = waypoints.find(w => w.role === 'finish');
+  setWaypointCoords(finishWp.id, lat, lon, 'Imported finish');
+});
+
+importClearBtn.addEventListener('click', () => {
+  importedTrack = null;
+  if (importedTrackLine) { map.removeLayer(importedTrackLine); importedTrackLine = null; }
+  importActions.style.display = 'none';
+});
+
+// Pick evenly-spaced points along the track (roughly every ~400m), capped so
+// the BRouter request stays reasonable, so it can be re-routed as via-stops.
+function downsampleTrack(track, targetSpacingKm = 0.4, maxPoints = 40) {
+  if (track.length <= 2) return track.slice();
+  let totalKm = 0;
+  for (let i = 1; i < track.length; i++) {
+    totalKm += haversineKm(track[i - 1][0], track[i - 1][1], track[i][0], track[i][1]);
+  }
+  const spacing = Math.max(targetSpacingKm, totalKm / maxPoints);
+  const picked = [track[0]];
+  let acc = 0;
+  for (let i = 1; i < track.length - 1; i++) {
+    acc += haversineKm(track[i - 1][0], track[i - 1][1], track[i][0], track[i][1]);
+    if (acc >= spacing) { picked.push(track[i]); acc = 0; }
+  }
+  picked.push(track[track.length - 1]);
+  return picked.slice(0, maxPoints + 2);
+}
+
+importMakeEditableBtn.addEventListener('click', () => {
+  if (!importedTrack || importedTrack.length < 2) return;
+
+  const sampled = downsampleTrack(importedTrack);
+  const first = sampled[0];
+  const last = sampled[sampled.length - 1];
+  const middle = sampled.slice(1, -1);
+
+  // Reset to a plain start -> stops -> finish route built from the track.
+  loopMode = false;
+  loopCheck.checked = false;
+  loopBulges = [];
+  renderBulgeMarkers();
+  renderBulgeRows();
+
+  const startId = nextId++;
+  const finishId = nextId++;
+  waypoints = [
+    { id: startId, role: 'start', lat: first[0], lon: first[1], label: 'Imported start' },
+    ...middle.map(([lat, lon]) => ({ id: nextId++, role: 'stop', lat, lon, label: '' })),
+    { id: finishId, role: 'finish', lat: last[0], lon: last[1], label: 'Imported finish' },
+  ];
+
+  renderWaypointRows();
+  renderMarkers();
+  armedId = null;
+
+  statusEl.className = '';
+  statusEl.textContent = `Built an editable route from ${sampled.length} points along the track — plot it to have BRouter retrace it on real roads. Mark areas to avoid first if you want it rerouted around anything.`;
+  scheduleAutoReplot();
+});
+
+/* ========================================================================
+   ROUTE CALCULATION
+   ======================================================================== */
+function fmtDistance(m) {
+  if (m <= 0) return '0 km';
+  const km = m / 1000;
+  if (km < 0.1) return '<0.1 km';
+  return km < 10 ? km.toFixed(1) + ' km' : Math.round(km) + ' km';
+}
+function fmtTime(sec) {
+  if (sec <= 0) return '0 min';
+  const h = Math.floor(sec / 3600);
+  const m = Math.round((sec % 3600) / 60);
+  if (h === 0 && m === 0) return '<1 min';
+  return h > 0 ? `${h}h ${m}m` : `${m} min`;
+}
+
+function classifyWayTags(wayTags) {
+  const t = wayTags || '';
+  const get = (key) => {
+    const m = t.match(new RegExp(key + '=([^\\s]+)'));
+    return m ? m[1] : '';
+  };
+  const hw = get('highway');
+  const bike = get('bicycle');
+  if (hw === 'cycleway') return 'cycleway';
+  if (hw === 'footway' || hw === 'pedestrian' || hw === 'path') {
+    if (bike === 'yes' || bike === 'designated') return 'shared';
+    return 'shared';
+  }
+  if (hw === 'track') return 'track';
+  if (['residential', 'living_street', 'service', 'unclassified'].includes(hw)) return 'quiet';
+  if (['primary', 'primary_link', 'secondary', 'secondary_link', 'tertiary', 'tertiary_link', 'trunk', 'trunk_link'].includes(hw)) return 'busy';
+  return 'other';
+}
+
+function parseMessages(props) {
+  if (!props || !Array.isArray(props.messages) || props.messages.length < 2) return null;
+  const header = props.messages[0];
+  const latIdx = header.indexOf('Latitude');
+  const lonIdx = header.indexOf('Longitude');
+  const distIdx = header.indexOf('Distance');
+  const tagsIdx = header.indexOf('WayTags');
+  if (latIdx < 0 || lonIdx < 0 || distIdx < 0 || tagsIdx < 0) return null;
+
+  const rows = props.messages.slice(1).map(r => {
+    let lat = parseFloat(r[latIdx]);
+    let lon = parseFloat(r[lonIdx]);
+    // BRouter debug coords are scaled integers; detect scale
+    if (Math.abs(lat) > 90) lat = lat / 1e6;
+    if (Math.abs(lon) > 180) lon = lon / 1e6;
+    return { lat, lon, distance: parseFloat(r[distIdx]) || 0, tags: r[tagsIdx] || '' };
+  });
+  return rows;
+}
+
+/* ========================================================================
+   ELEVATION PROFILE
+   ======================================================================== */
+function buildDenseCumKm(coords) {
+  const cum = [0];
+  for (let i = 1; i < coords.length; i++) {
+    cum.push(cum[i - 1] + haversineKm(coords[i - 1][0], coords[i - 1][1], coords[i][0], coords[i][1]));
+  }
+  return cum;
+}
+
+function buildElevationProfile(coords, elevations, cumKm) {
+  if (!coords.length || !elevations || !elevations.some(e => e != null && !isNaN(e))) return null;
+  const raw = [];
+  let lastEle = elevations.find(e => e != null && !isNaN(e)) || 0;
+  for (let i = 0; i < coords.length; i++) {
+    const e = (elevations[i] != null && !isNaN(elevations[i])) ? elevations[i] : lastEle;
+    lastEle = e;
+    raw.push({ distKm: cumKm[i], ele: e, lat: coords[i][0], lon: coords[i][1] });
+  }
+  const maxPoints = 220;
+  if (raw.length <= maxPoints) return raw;
+  const step = raw.length / maxPoints;
+  const sampled = [];
+  for (let i = 0; i < maxPoints; i++) sampled.push(raw[Math.floor(i * step)]);
+  sampled.push(raw[raw.length - 1]);
+  return sampled;
+}
+
+function makeHighlightMarker(lat, lon) {
+  const icon = L.divIcon({
+    className: '',
+    html: `<div style="width:14px;height:14px;border-radius:50%;background:#c25a3f;border:2px solid #f2efe9;box-shadow:0 0 0 2px #23262b;"></div>`,
+    iconSize: [14, 14], iconAnchor: [7, 7],
+  });
+  return L.marker([lat, lon], { icon, interactive: false, zIndexOffset: 1000 }).addTo(map);
+}
+
+function showHighlightMarker(lat, lon) {
+  // Fast path for the elevation-chart hover — reuse a single marker instance
+  // rather than tearing down/rebuilding on every mousemove tick.
+  if (highlightMapMarkers.length === 1) {
+    highlightMapMarkers[0].setLatLng([lat, lon]);
+  } else {
+    hideHighlightMarker();
+    highlightMapMarkers = [makeHighlightMarker(lat, lon)];
+  }
+}
+
+function hideHighlightMarker() {
+  highlightMapMarkers.forEach(m => map.removeLayer(m));
+  highlightMapMarkers = [];
+}
+
+let highlightMarkerTimer = null;
+
+// Used by clicking a stop/start/finish row (one point) or a leg row (two
+// points) in the (often-collapsed) lists — drops highlight dot(s) on the
+// map, frames them into view, and fades out after a few seconds rather than
+// leaving them stuck on.
+function highlightPoints(points) {
+  hideHighlightMarker();
+  highlightMapMarkers = points.map(([lat, lon]) => makeHighlightMarker(lat, lon));
+  if (points.length > 1) {
+    map.fitBounds(L.latLngBounds(points), { padding: [60, 60], maxZoom: 17 });
+  } else if (points.length === 1) {
+    map.panTo(points[0]);
+  }
+  if (highlightMarkerTimer) clearTimeout(highlightMarkerTimer);
+  highlightMarkerTimer = setTimeout(() => hideHighlightMarker(), 3000);
+}
+
+function highlightWaypoint(wp) {
+  if (wp.lat == null) return;
+  highlightPoints([[wp.lat, wp.lon]]);
+}
+
+function highlightLeg(leg) {
+  if (leg.fromLat == null || leg.toLat == null) return;
+  highlightPoints([[leg.fromLat, leg.fromLon], [leg.toLat, leg.toLon]]);
+}
+
+function renderElevationChart() {
+  const profile = lastElevationProfile;
+  if (!profile || profile.length < 2) {
+    elevationBlock.style.display = 'none';
+    elevationChart.innerHTML = '';
+    return;
+  }
+  elevationBlock.style.display = 'block';
+
+  const W = 400, H = 110, padTop = 8, padBottom = 18, padSide = 2;
+  const eles = profile.map(p => p.ele);
+  const minE = Math.min(...eles), maxE = Math.max(...eles);
+  const eleRange = Math.max(maxE - minE, 5);
+  const totalDist = profile[profile.length - 1].distKm || 1;
+
+  const xForIdx = (i) => padSide + (profile[i].distKm / totalDist) * (W - padSide * 2);
+  const yForEle = (e) => padTop + (1 - (e - minE) / eleRange) * (H - padTop - padBottom);
+
+  let pathD = '';
+  profile.forEach((p, i) => {
+    pathD += (i === 0 ? 'M' : 'L') + xForIdx(i).toFixed(1) + ',' + yForEle(p.ele).toFixed(1) + ' ';
+  });
+  const fillD = pathD + `L${xForIdx(profile.length - 1).toFixed(1)},${H - padBottom} L${xForIdx(0).toFixed(1)},${H - padBottom} Z`;
+
+  elevationChart.setAttribute('viewBox', `0 0 ${W} ${H}`);
+  elevationChart.innerHTML = `
+    <path d="${fillD}" fill="rgba(215,227,76,0.18)" stroke="none"></path>
+    <path d="${pathD}" fill="none" stroke="#d7e34c" stroke-width="1.6"></path>
+    <line id="ele-guide" x1="0" y1="${padTop}" x2="0" y2="${H - padBottom}" stroke="#eae6dc" stroke-width="1" stroke-dasharray="2 2" style="display:none;"></line>
+    <circle id="ele-dot" r="3.2" fill="#c25a3f" stroke="#23262b" stroke-width="1" style="display:none;"></circle>
+    <rect id="ele-overlay" x="0" y="0" width="${W}" height="${H}" fill="transparent"></rect>
+  `;
+
+  const overlay = document.getElementById('ele-overlay');
+  const guide = document.getElementById('ele-guide');
+  const dot = document.getElementById('ele-dot');
+
+  function handleMove(clientX) {
+    const rect = elevationChart.getBoundingClientRect();
+    const relX = (clientX - rect.left) / rect.width * W;
+    let nearest = 0, bestD = Infinity;
+    for (let i = 0; i < profile.length; i++) {
+      const d = Math.abs(xForIdx(i) - relX);
+      if (d < bestD) { bestD = d; nearest = i; }
+    }
+    const p = profile[nearest];
+    const x = xForIdx(nearest), y = yForEle(p.ele);
+    guide.setAttribute('x1', x); guide.setAttribute('x2', x); guide.style.display = 'block';
+    dot.setAttribute('cx', x); dot.setAttribute('cy', y); dot.style.display = 'block';
+    elevationReadout.style.display = 'block';
+    elevationReadout.textContent = fmtDistance(p.distKm * 1000) + ' · ' + Math.round(p.ele) + ' m';
+    showHighlightMarker(p.lat, p.lon);
+  }
+
+  overlay.addEventListener('mousemove', (e) => handleMove(e.clientX));
+  overlay.addEventListener('touchmove', (e) => { if (e.touches[0]) handleMove(e.touches[0].clientX); }, { passive: true });
+  overlay.addEventListener('mouseleave', () => {
+    guide.style.display = 'none'; dot.style.display = 'none'; elevationReadout.style.display = 'none';
+    hideHighlightMarker();
+  });
+}
+
+/* ========================================================================
+   LEG-BY-LEG BREAKDOWN
+   ======================================================================== */
+// Search forward from fromIdx only, never backward. Searching the whole
+// route independently for each stop (the old approach) lets a later stop
+// snap to an EARLIER point if the route loops near itself — two stops a
+// street apart can both be close to the same bit of road on opposite sides
+// of a loop. That produced bogus zero-distance legs. Walking forward in
+// route order keeps leg boundaries monotonic and matches how you actually
+// ride the route.
+function nearestCoordIndexFrom(coords, lat, lon, fromIdx) {
+  let best = fromIdx, bestD = Infinity;
+  for (let i = fromIdx; i < coords.length; i++) {
+    const d = haversineKm(coords[i][0], coords[i][1], lat, lon);
+    if (d < bestD) { bestD = d; best = i; }
+  }
+  return best;
+}
+
+function buildLegsBreakdown() {
+  if (!lastRouteCoords || !lastRouteCumKm) return null;
+  const start = waypoints.find(w => w.role === 'start');
+  const stops = waypoints.filter(w => w.role === 'stop');
+  const finish = waypoints.find(w => w.role === 'finish');
+  const realPoints = loopMode ? [start, ...stops, { ...start, role: 'finish' }] : [start, ...stops, finish];
+  if (realPoints.some(w => w.lat == null)) return null;
+  if (realPoints.length < 3) return null; // need at least one real stop to have more than one leg
+
+  // Match the map's badges — "Start"/"Finish" stay as words, but stops are
+  // plain numbers (1, 2, 3…) so a leg like "2 → 3" points at the same pins
+  // as the map and the stop list, not an offset-by-one "Stop" label.
+  const labels = realPoints.map((w, i) => i === 0 ? 'Start' : (i === realPoints.length - 1 ? 'Finish' : String(i)));
+  const idxs = [];
+  let cursor = 0;
+  realPoints.forEach(w => {
+    cursor = nearestCoordIndexFrom(lastRouteCoords, w.lat, w.lon, cursor);
+    idxs.push(cursor);
+  });
+
+  // Raw per-point elevation deltas are noisy (DEM/GPS jitter), so summing
+  // every tiny uptick badly overstates real climbing — often 1.5-2x what
+  // BRouter's own "filtered ascend" reports for the whole route. Rather
+  // than reimplementing that filtering ourselves, distribute BRouter's real
+  // total proportionally across legs using the raw sums as relative
+  // weights: hillier legs still get more of the climb-time penalty than
+  // flat ones, but the total can't run away from the real ascent figure.
+  let rawTotal = 0;
+  const rawClimbs = [];
+  for (let i = 1; i < idxs.length; i++) {
+    let raw = 0;
+    if (lastRouteElevations) {
+      for (let j = idxs[i - 1] + 1; j <= idxs[i]; j++) {
+        const prev = lastRouteElevations[j - 1], cur = lastRouteElevations[j];
+        if (prev != null && cur != null && cur > prev) raw += (cur - prev);
+      }
+    }
+    rawClimbs.push(raw);
+    rawTotal += raw;
+  }
+  const scale = (lastRouteAscend && rawTotal > 0) ? (lastRouteAscend / rawTotal) : 1;
+
+  const legs = [];
+  for (let i = 1; i < idxs.length; i++) {
+    const distKm = Math.max(0, lastRouteCumKm[idxs[i]] - lastRouteCumKm[idxs[i - 1]]);
+    const climbM = rawClimbs[i - 1] * scale;
+    legs.push({
+      from: labels[i - 1], to: labels[i], distKm, climbM,
+      fromLat: realPoints[i - 1].lat, fromLon: realPoints[i - 1].lon,
+      toLat: realPoints[i].lat, toLon: realPoints[i].lon,
+    });
+  }
+  return legs;
+}
+
+// Flat pace from the fitness preset, plus a climb-time penalty derived from
+// that same preset's climbing rate — not a precise physical model, just
+// more representative than either a flat average across all terrain or a
+// single climb penalty applied the same way regardless of fitness level.
+function legTimeSeconds(distKm, climbM, level) {
+  const flatSec = (distKm / level.kmh) * 3600;
+  const climbSec = climbM > 0 ? (climbM / level.climbMPerHour) * 3600 : 0;
+  return flatSec + climbSec;
+}
+
+function renderFitnessLevels() {
+  fitnessLevelsEl.innerHTML = '';
+  FITNESS_LEVELS.forEach(f => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'pill-btn' + (f.id === fitnessLevel ? ' active' : '');
+    btn.innerHTML = `<strong>${f.label}</strong><span>~${f.kmh} km/h</span>`;
+    btn.addEventListener('click', () => { fitnessLevel = f.id; renderFitnessLevels(); renderLegsList(); });
+    fitnessLevelsEl.appendChild(btn);
+  });
+}
+
+function renderLegsList() {
+  const legs = buildLegsBreakdown();
+  if (!legs || !legs.length) { legsBlock.style.display = 'none'; return; }
+  legsBlock.style.display = 'block';
+  const level = FITNESS_LEVELS.find(f => f.id === fitnessLevel);
+  const totalSec = legs.reduce((sum, leg) => sum + legTimeSeconds(leg.distKm, leg.climbM, level), 0);
+
+  legsListEl.innerHTML = '';
+
+  const toggleRow = document.createElement('div');
+  toggleRow.style.cssText = 'font-size:11px; color:#9aa0ac; cursor:pointer; display:flex; align-items:center; justify-content:space-between; gap:6px; padding:4px 2px; user-select:none;';
+  toggleRow.innerHTML = `<span>${legs.length} leg${legs.length > 1 ? 's' : ''} ${legsListExpanded ? '▾' : '▸'}</span><span class="meta">${fmtTime(totalSec)} total</span>`;
+  toggleRow.title = 'Show/hide the leg-by-leg breakdown';
+  toggleRow.addEventListener('click', () => {
+    legsListExpanded = !legsListExpanded;
+    renderLegsList();
+  });
+  legsListEl.appendChild(toggleRow);
+
+  if (legsListExpanded) {
+    legs.forEach(leg => {
+      const sec = legTimeSeconds(leg.distKm, leg.climbM, level);
+      const row = document.createElement('div');
+      row.className = 'item-row';
+      row.style.cursor = 'pointer';
+      row.title = 'Click to highlight both ends of this leg on the map';
+      row.innerHTML = `<span style="flex:1; color:#d8dbe0;">${leg.from} → ${leg.to}</span><span class="meta">${fmtDistance(leg.distKm * 1000)} · ${fmtTime(sec)}</span>`;
+      row.addEventListener('click', () => highlightLeg(leg));
+      legsListEl.appendChild(row);
+    });
+  }
+}
+
+async function plotRoute(isAuto, altIdx) {
+  const list = activeWaypoints();
+  if (list.length < 2 || !list.every(w => w.lat != null)) return;
+  if (isAuto && autoPlotInFlight) { scheduleAutoReplot(); return; } // don't overlap requests
+
+  const isAltSwitch = altIdx != null;
+  if (!isAltSwitch) { altIdx = 0; altCache = {}; } // fresh route input — old alternatives no longer apply
+  currentAltIdx = altIdx;
+
+  if (altCache[altIdx]) {
+    applyRouteResult(altCache[altIdx], !isAuto);
+    renderAltButtons();
+    return;
+  }
+
+  goBtn.disabled = true;
+  if (isAuto) autoPlotInFlight = true;
+  statusEl.className = '';
+  statusEl.textContent = isAuto ? 'Updating route…' : (isAltSwitch ? 'Loading alternative…' : 'Requesting route from BRouter…');
+
+  const lonlats = list.map(w => `${w.lon},${w.lat}`).join('|');
+  const nogosParam = nogos.length ? `&nogos=${nogos.map(n => `${n.lon},${n.lat},${n.radius}`).join('|')}` : '';
+  const polylinesParam = roadBans.length
+    ? `&polylines=${roadBans.map(rb => rb.points.map(p => `${p[1]},${p[0]}`).join(',')).join('|')}`
+    : '';
+  const advParams = buildAdvancedParams();
+  const url = `https://brouter.de/brouter?lonlats=${lonlats}${nogosParam}${polylinesParam}&profile=${selectedProfile}${advParams}&alternativeidx=${altIdx}&format=geojson`;
+
+  try {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error('BRouter returned an error (' + res.status + ')');
+    const geo = await res.json();
+    if (!geo.features || !geo.features.length) throw new Error('No route found between those points.');
+
+    const feature = geo.features[0];
+    const coords = feature.geometry.coordinates.map(c => [c[1], c[0]]);
+    const elevations = feature.geometry.coordinates.map(c => (c.length > 2 ? c[2] : null));
+    const props = feature.properties || {};
+    const result = {
+      coords, elevations,
+      distanceM: parseFloat(props['track-length'] || 0),
+      timeS: parseFloat(props['total-time'] || 0),
+      ascend: props['filtered ascend'] || props['ascend'],
+      messages: parseMessages(props),
+    };
+    altCache[altIdx] = result;
+
+    applyRouteResult(result, !isAuto);
+    renderAltButtons();
+
+    resultEl.classList.add('show');
+    hasPlottedOnce = true;
+    updateAutoplotHint();
+    statusEl.textContent = '';
+  } catch (err) {
+    statusEl.textContent = err.message + ' — BRouter\'s public server can be rate-limited or the profile override rejected; try again, or simplify your fine-tune options.';
+    statusEl.className = 'err';
+  } finally {
+    goBtn.disabled = false;
+    if (isAuto) autoPlotInFlight = false;
+  }
+}
+
+function applyRouteResult(result, shouldFitBounds) {
+  lastRouteCoords = result.coords;
+  lastRouteElevations = result.elevations;
+  lastRouteCumKm = buildDenseCumKm(result.coords);
+  lastElevationProfile = buildElevationProfile(result.coords, result.elevations, lastRouteCumKm);
+  lastRouteAscend = result.ascend ? parseFloat(result.ascend) : 0;
+  renderElevationChart();
+
+  document.getElementById('stat-distance').textContent = result.distanceM ? fmtDistance(result.distanceM) : '—';
+  document.getElementById('stat-time').textContent = result.timeS ? fmtTime(result.timeS) : '—';
+  document.getElementById('stat-climb').textContent = result.ascend ? Math.round(result.ascend) + ' m' : '—';
+
+  // road-type breakdown (best effort — depends on BRouter returning per-point tags)
+  lastRouteMessages = result.messages;
+  if (lastRouteMessages) {
+    const totals = {};
+    ROAD_CATEGORIES.forEach(c => totals[c.id] = 0);
+    for (let i = 1; i < lastRouteMessages.length; i++) {
+      const cat = classifyWayTags(lastRouteMessages[i].tags);
+      totals[cat] = (totals[cat] || 0) + lastRouteMessages[i].distance;
+    }
+    lastRouteCategoryTotals = totals;
+    renderLegend(totals);
+    breakdownBlock.style.display = 'block';
+  } else {
+    lastRouteCategoryTotals = null;
+    breakdownBlock.style.display = 'none';
+    colourToggle.checked = false; // no per-point data to colour by — fall back to plain
+  }
+
+  // Now that lastRouteCoords AND lastRouteMessages both reflect the fresh
+  // route, (re)draw — this keeps colour-by-type mode applied across
+  // replots instead of silently reverting to a plain line.
+  renderRouteDisplay();
+  if (shouldFitBounds) map.fitBounds(L.latLngBounds(result.coords), { padding: [40, 40] });
+
+  renderLegsList();
+}
+
+function renderAltButtons() {
+  const list = activeWaypoints();
+  // Alternatives only make sense for a plain point-to-point-ish request —
+  // still safe to offer for any route, BRouter just may return the same
+  // path back for some indices, which is fine, not an error.
+  altBlock.style.display = 'flex';
+  altBlock.style.flexDirection = 'column';
+  altListEl.innerHTML = '';
+  const labels = ['A', 'B', 'C', 'D'];
+  for (let i = 0; i < 4; i++) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'pill-btn' + (i === currentAltIdx ? ' active' : '');
+    const cached = altCache[i];
+    btn.innerHTML = `<strong>${labels[i]}</strong><span>${cached ? fmtDistance(cached.distanceM) : '···'}</span>`;
+    btn.addEventListener('click', () => { if (i !== currentAltIdx) plotRoute(false, i); });
+    altListEl.appendChild(btn);
+  }
+}
+
+function renderLegend(totals) {
+  legendEl.innerHTML = '';
+  ROAD_CATEGORIES.forEach(c => {
+    const dist = totals[c.id] || 0;
+    if (dist < 1) return;
+    const row = document.createElement('div');
+    row.className = 'legend-row';
+    row.innerHTML = `<span class="legend-swatch" style="background:${c.color}"></span>
+      <span class="legend-label">${c.label}</span>
+      <span class="legend-dist">${fmtDistance(dist)}</span>`;
+    legendEl.appendChild(row);
+  });
+}
+
+// BRouter's debug "messages" are sparse and don't line up with the dense
+// route geometry, so drawing straight lines directly between them cuts
+// corners badly. Instead, walk the dense geometry and use cumulative
+// distance to find which message-segment (and therefore which road-type tag)
+// each dense point falls under, then draw colour-coded runs along the real
+// geometry rather than between sparse points.
+function buildColourSegments(denseCoords, messages) {
+  if (!denseCoords.length || !messages || !messages.length) return [];
+
+  const msgCum = [0];
+  for (let i = 1; i < messages.length; i++) {
+    msgCum.push(msgCum[i - 1] + (messages[i].distance || 0));
+  }
+
+  const coordCum = [0];
+  for (let i = 1; i < denseCoords.length; i++) {
+    coordCum.push(coordCum[i - 1] + haversineKm(denseCoords[i - 1][0], denseCoords[i - 1][1], denseCoords[i][0], denseCoords[i][1]) * 1000);
+  }
+
+  let mi = 1;
+  const categories = denseCoords.map((_, idx) => {
+    const d = coordCum[idx];
+    while (mi < messages.length - 1 && msgCum[mi] < d) mi++;
+    return classifyWayTags(messages[mi] ? messages[mi].tags : '');
+  });
+
+  const segments = [];
+  let segStart = 0;
+  for (let i = 1; i < denseCoords.length; i++) {
+    if (categories[i] !== categories[segStart]) {
+      segments.push({ cat: categories[segStart], coords: denseCoords.slice(segStart, i + 1) });
+      segStart = i;
+    }
+  }
+  segments.push({ cat: categories[segStart], coords: denseCoords.slice(segStart) });
+  return segments;
+}
+
+// Single source of truth for drawing the route line on the map — plain red,
+// or colour-by-type segments, depending on the checkbox — used both when a
+// fresh route comes back from BRouter and when the checkbox itself is
+// toggled. Always tears down whatever was there before drawing the new one,
+// so a stale line/segments can never linger behind a fresh route.
+function renderRouteDisplay() {
+  if (routeLine) { map.removeLayer(routeLine); routeLine = null; }
+  colourSegmentLines.forEach(l => map.removeLayer(l));
+  colourSegmentLines = [];
+
+  if (!lastRouteCoords) return;
+
+  if (colourToggle.checked && lastRouteMessages) {
+    const segments = buildColourSegments(lastRouteCoords, lastRouteMessages);
+    segments.forEach(seg => {
+      const color = (ROAD_CATEGORIES.find(c => c.id === seg.cat) || ROAD_CATEGORIES[5]).color;
+      const line = L.polyline(seg.coords, { color, weight: 5, opacity: 0.9 }).addTo(map);
+      colourSegmentLines.push(line);
+    });
+  } else {
+    routeLine = L.polyline(lastRouteCoords, { color: '#c25a3f', weight: 4.5, opacity: 0.9 }).addTo(map);
+  }
+}
+
+colourToggle.addEventListener('change', () => {
+  renderRouteDisplay();
+});
+
+goBtn.addEventListener('click', () => {
+  if (autoPlotTimer) { clearTimeout(autoPlotTimer); autoPlotTimer = null; }
+  plotRoute(false);
+});
+
+/* ========================================================================
+   GPX EXPORT
+   ======================================================================== */
+function buildGpxString() {
+  const trkpts = lastRouteCoords.map(([lat, lon]) => `      <trkpt lat="${lat}" lon="${lon}"></trkpt>`).join('\n');
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="Routecard" xmlns="http://www.topografix.com/GPX/1/1">
+  <trk>
+    <name>Routecard route</name>
+    <trkseg>
+${trkpts}
+    </trkseg>
+  </trk>
+</gpx>`;
+}
+
+function downloadGpx(filename) {
+  const blob = new Blob([buildGpxString()], { type: 'application/gpx+xml' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+exportBtn.addEventListener('click', () => {
+  if (!lastRouteCoords) { statusEl.textContent = 'Plot a route first.'; statusEl.className = 'err'; return; }
+  downloadGpx('routecard-route.gpx');
+});
+
+komootBtn.addEventListener('click', () => {
+  if (!lastRouteCoords) { statusEl.textContent = 'Plot a route first.'; statusEl.className = 'err'; return; }
+  downloadGpx('routecard-route.gpx');
+  window.open('https://www.komoot.com/upload', '_blank');
+  statusEl.textContent = 'GPX downloaded and Komoot\'s upload page opened — drop the file in there (there\'s no way to skip that last step without their app-partner API).';
+  statusEl.className = '';
+});
+
+/* ========================================================================
+   LOCAL SAVE / LOAD — kept in-memory for this tab; back up to a file
+   ======================================================================== */
+let savedPresets = []; // {id, name, savedAt, nogos, roadBans}
+let savedRoutes = [];  // {id, name, savedAt, waypoints, loopMode, selectedProfile, advancedState, hillAvoidance, elevSensitivity, loopBulges, nogos, roadBans}
+
+/* --- avoid-zone presets --- */
+presetSaveBtn.addEventListener('click', () => {
+  const name = presetNameInput.value.trim() || 'Untitled set';
+  if (!nogos.length && !roadBans.length) { statusEl.textContent = 'Nothing to save yet — mark an area or road first.'; statusEl.className = 'err'; return; }
+  savedPresets.push({ id: 'preset' + Date.now(), name, savedAt: Date.now(), nogos: JSON.parse(JSON.stringify(nogos)), roadBans: JSON.parse(JSON.stringify(roadBans)) });
+  presetNameInput.value = '';
+  renderPresetList();
+  statusEl.textContent = 'Saved "' + name + '". Remember to export to a file so it survives a reload.';
+  statusEl.className = '';
+});
+
+function renderPresetList() {
+  presetListEl.innerHTML = '';
+  savedPresets.slice().sort((a, b) => b.savedAt - a.savedAt).forEach(p => {
+    const row = document.createElement('div');
+    row.className = 'item-row';
+
+    const nameInput = document.createElement('input');
+    nameInput.type = 'text';
+    nameInput.value = p.name;
+    nameInput.title = 'Rename this preset';
+    nameInput.addEventListener('input', () => { p.name = nameInput.value; });
+    row.appendChild(nameInput);
+
+    const loadBtn = document.createElement('button');
+    loadBtn.type = 'button'; loadBtn.className = 'icon-btn'; loadBtn.style.width = 'auto'; loadBtn.style.padding = '0 8px';
+    loadBtn.textContent = 'Load';
+    loadBtn.title = 'Add these areas/roads to the current map';
+    loadBtn.addEventListener('click', () => {
+      const newNogos = (p.nogos || []).map(n => ({ ...n, id: nextId++ }));
+      const newBans = (p.roadBans || []).map(rb => ({ ...rb, id: nextId++ }));
+      nogos = nogos.concat(newNogos);
+      roadBans = roadBans.concat(newBans);
+      renderNogos(); renderBans();
+      statusEl.textContent = 'Loaded "' + p.name + '".';
+      statusEl.className = '';
+      scheduleAutoReplot();
+    });
+    row.appendChild(loadBtn);
+
+    const updateBtn = document.createElement('button');
+    updateBtn.type = 'button'; updateBtn.className = 'icon-btn'; updateBtn.style.width = 'auto'; updateBtn.style.padding = '0 8px';
+    updateBtn.textContent = '↻';
+    updateBtn.title = 'Overwrite this preset with the areas/roads currently on the map';
+    updateBtn.addEventListener('click', () => {
+      if (!nogos.length && !roadBans.length) { statusEl.textContent = 'Nothing on the map to save into this preset.'; statusEl.className = 'err'; return; }
+      p.nogos = JSON.parse(JSON.stringify(nogos));
+      p.roadBans = JSON.parse(JSON.stringify(roadBans));
+      p.savedAt = Date.now();
+      statusEl.textContent = 'Updated "' + p.name + '" with the current map.';
+      statusEl.className = '';
+      renderPresetList();
+    });
+    row.appendChild(updateBtn);
+
+    const delBtn = document.createElement('button');
+    delBtn.type = 'button'; delBtn.className = 'icon-btn remove';
+    delBtn.textContent = '×';
+    delBtn.addEventListener('click', () => {
+      savedPresets = savedPresets.filter(x => x.id !== p.id);
+      renderPresetList();
+    });
+    row.appendChild(delBtn);
+
+    presetListEl.appendChild(row);
+  });
+}
+
+/* --- full saved routes --- */
+function snapshotCurrentRoute() {
+  return {
+    waypoints: waypoints.map(w => ({ role: w.role, lat: w.lat, lon: w.lon, label: w.label })),
+    loopMode, selectedProfile, advancedState: { ...advancedState }, hillAvoidance, elevSensitivity,
+    loopBulges: JSON.parse(JSON.stringify(loopBulges)),
+    nogos: JSON.parse(JSON.stringify(nogos)), roadBans: JSON.parse(JSON.stringify(roadBans)),
+  };
+}
+
+/* --- shareable link --- */
+function buildShareUrl() {
+  const json = JSON.stringify(snapshotCurrentRoute());
+  const encoded = LZString.compressToEncodedURIComponent(json);
+  return location.origin + location.pathname + '#s=' + encoded;
+}
+
+shareLinkBtn.addEventListener('click', async () => {
+  const start = waypoints.find(w => w.role === 'start');
+  if (!start || start.lat == null) {
+    statusEl.textContent = 'Set a start point first.';
+    statusEl.className = 'err';
+    return;
+  }
+  const url = buildShareUrl();
+  const originalText = shareLinkBtn.textContent;
+  try {
+    await navigator.clipboard.writeText(url);
+    statusEl.textContent = 'Share link copied — paste it anywhere. Whoever opens it re-plots the route themselves.';
+    statusEl.className = '';
+    shareLinkBtn.textContent = '✓ Copied!';
+    shareLinkBtn.disabled = true;
+    setTimeout(() => { shareLinkBtn.textContent = originalText; shareLinkBtn.disabled = false; }, 2000);
+  } catch (err) {
+    window.prompt('Copy this link:', url);
+  }
+});
+
+// If the page was opened via a share link, load that state instead of
+// starting blank, then plot it once automatically (scheduleAutoReplot()
+// won't fire on its own before a first manual plot, so this is explicit).
+function loadFromShareLink() {
+  if (!location.hash.startsWith('#s=')) return false;
+  try {
+    const json = LZString.decompressFromEncodedURIComponent(location.hash.slice(3));
+    if (!json) throw new Error('empty');
+    const state = JSON.parse(json);
+    loadSavedRoute({ ...state, name: 'Shared route' });
+    setTimeout(() => plotRoute(false), 50);
+    return true;
+  } catch (err) {
+    statusEl.textContent = 'Could not read that share link — it may be corrupted or from an incompatible version.';
+    statusEl.className = 'err';
+    return false;
+  }
+}
+
+routeSaveBtn.addEventListener('click', () => {
+  const name = routeNameInput.value.trim() || 'Untitled route';
+  const data = { id: 'route' + Date.now(), name, savedAt: Date.now(), ...snapshotCurrentRoute() };
+  savedRoutes.push(data);
+  routeNameInput.value = '';
+  renderRouteList();
+  statusEl.textContent = 'Saved "' + name + '". Remember to export to a file so it survives a reload.';
+  statusEl.className = '';
+});
+
+function renderRouteList() {
+  routeListEl.innerHTML = '';
+  savedRoutes.slice().sort((a, b) => b.savedAt - a.savedAt).forEach(r => {
+    const row = document.createElement('div');
+    row.className = 'item-row';
+
+    const nameInput = document.createElement('input');
+    nameInput.type = 'text';
+    nameInput.value = r.name;
+    nameInput.title = 'Rename this route';
+    nameInput.addEventListener('input', () => { r.name = nameInput.value; });
+    row.appendChild(nameInput);
+
+    const loadBtn = document.createElement('button');
+    loadBtn.type = 'button'; loadBtn.className = 'icon-btn'; loadBtn.style.width = 'auto'; loadBtn.style.padding = '0 8px';
+    loadBtn.textContent = 'Load';
+    loadBtn.addEventListener('click', () => loadSavedRoute(r));
+    row.appendChild(loadBtn);
+
+    const updateBtn = document.createElement('button');
+    updateBtn.type = 'button'; updateBtn.className = 'icon-btn'; updateBtn.style.width = 'auto'; updateBtn.style.padding = '0 8px';
+    updateBtn.textContent = '↻';
+    updateBtn.title = 'Overwrite this route with what\'s on the map now';
+    updateBtn.addEventListener('click', () => {
+      Object.assign(r, snapshotCurrentRoute());
+      r.savedAt = Date.now();
+      statusEl.textContent = 'Updated "' + r.name + '" with the current map.';
+      statusEl.className = '';
+      renderRouteList();
+    });
+    row.appendChild(updateBtn);
+
+    const delBtn = document.createElement('button');
+    delBtn.type = 'button'; delBtn.className = 'icon-btn remove';
+    delBtn.textContent = '×';
+    delBtn.addEventListener('click', () => {
+      savedRoutes = savedRoutes.filter(x => x.id !== r.id);
+      renderRouteList();
+    });
+    row.appendChild(delBtn);
+
+    routeListEl.appendChild(row);
+  });
+}
+
+function loadSavedRoute(data) {
+  waypoints = (data.waypoints || []).map(w => ({ ...w, id: nextId++ }));
+  if (!waypoints.find(w => w.role === 'start')) waypoints.unshift({ id: nextId++, role: 'start', lat: null, lon: null, label: '' });
+  if (!waypoints.find(w => w.role === 'finish')) waypoints.push({ id: nextId++, role: 'finish', lat: null, lon: null, label: '' });
+
+  loopMode = !!data.loopMode; loopCheck.checked = loopMode;
+  loopBulges = (data.loopBulges || []).map(b => ({ ...b, id: nextId++ }));
+  selectedProfile = data.selectedProfile || 'trekking'; renderProfiles();
+  advancedState = data.advancedState || advancedState; renderAdvancedToggles();
+  hillAvoidance = data.hillAvoidance || 0; hillSlider.value = hillAvoidance; hillSliderVal.textContent = hillAvoidance === 0 ? 'off' : String(hillAvoidance);
+  elevSensitivity = data.elevSensitivity != null ? data.elevSensitivity : 1.5; elevSlider.value = elevSensitivity; elevSliderVal.textContent = elevSensitivity.toFixed(1) + '%';
+  nogos = (data.nogos || []).map(n => ({ ...n, id: nextId++ }));
+  roadBans = (data.roadBans || []).map(rb => ({ ...rb, id: nextId++ }));
+
+  renderWaypointRows(); renderMarkers(); renderNogos(); renderBans(); renderBulgeMarkers(); renderBulgeRows();
+  statusEl.textContent = 'Loaded "' + data.name + '".';
+  statusEl.className = '';
+  scheduleAutoReplot();
+}
+
+/* --- backup / restore to a file --- */
+exportDataBtn.addEventListener('click', () => {
+  if (!savedRoutes.length && !savedPresets.length) {
+    statusEl.textContent = 'Nothing saved yet — save a route or a preset first.';
+    statusEl.className = 'err';
+    return;
+  }
+  const payload = { version: 1, exportedAt: Date.now(), routes: savedRoutes, presets: savedPresets };
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'routecard-library.json';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+});
+
+importDataBtn.addEventListener('click', () => dataFileInput.click());
+
+dataFileInput.addEventListener('change', () => {
+  const file = dataFileInput.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    try {
+      const payload = JSON.parse(reader.result);
+      const importedRoutes = Array.isArray(payload.routes) ? payload.routes : [];
+      const importedPresets = Array.isArray(payload.presets) ? payload.presets : [];
+      // merge, keeping existing items and avoiding id collisions
+      const existingRouteIds = new Set(savedRoutes.map(r => r.id));
+      importedRoutes.forEach(r => { if (existingRouteIds.has(r.id)) r.id = 'route' + Date.now() + Math.random(); savedRoutes.push(r); });
+      const existingPresetIds = new Set(savedPresets.map(p => p.id));
+      importedPresets.forEach(p => { if (existingPresetIds.has(p.id)) p.id = 'preset' + Date.now() + Math.random(); savedPresets.push(p); });
+      renderRouteList(); renderPresetList();
+      statusEl.className = '';
+      statusEl.textContent = `Imported ${importedRoutes.length} route(s) and ${importedPresets.length} preset(s).`;
+    } catch (err) {
+      statusEl.className = 'err';
+      statusEl.textContent = 'Could not read that file — is it a Routecard export?';
+    }
+  };
+  reader.readAsText(file);
+  dataFileInput.value = '';
+});
+
+/* ========================================================================
+   INIT
+   ======================================================================== */
+renderProfiles();
+renderAdvancedToggles();
+renderFitnessLevels();
+renderWaypointRows();
+renderMarkers();
+armedId = waypoints[0].id;
+renderWaypointRows();
+renderPresetList();
+renderRouteList();
+loadFromShareLink();
+</script>
+</body>
+</html>
