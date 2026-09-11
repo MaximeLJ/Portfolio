@@ -12,14 +12,12 @@ What I did was direct and test it, the same way I'd work with any engineer:
 
 - **Set the product direction.** Every feature here — the loop-bulge mechanic, Komoot-style stop insertion, avoid zones, alternates, the elevation chart, fitness-level time estimates, the share-link system — started as something I asked for, usually after using an earlier version and noticing what was missing or annoying.
 - **Made the UX calls.** Things like numbering stops A/B/1/2/3 consistently across the map and the lists, collapsing long stop/leg lists by default, click-to-highlight instead of a second confirmation step, what "extend" should mean on the bulge slider — these were my calls, iterated on until they felt right.
-- **Found real bugs by actually using it**, not just by reading the code:
-  - Caught that colour-by-type silently reverted to a plain line on every route recalculation.
-  - Caught that a bulge could keep adding distance to a loop that had already grown past it, instead of backing off.
-  - Caught a leg in the distance breakdown reading exactly `0.0 km` when there was visibly real distance on the map between those two stops — which turned out to be a genuine bug in how leg boundaries were matched to the route geometry when a route looped near itself.
-  - Caught that a 37 km / 305 m climb route was estimating 3h42m, which didn't add up — that led to fixing an elevation-noise bug that was overstating total climb by roughly 2x.
-  - Caught a page-load crash ("nothing is working") that turned out to be a variable-ordering bug in newly added code.
-
-None of that was guesswork on my part — I compared what the app showed against what the map and the numbers should have implied, and pushed back until the discrepancy was explained and fixed.
+- **Found real bugs by actually using it**, not just by reading the code, such as:
+  - Colour-by-type silently reverting to a plain line on every route recalculation.
+  - Added bulges could keep adding distance to a loop that had already grown past it, instead of backing off.
+  - A leg in the distance breakdown reading exactly `0.0 km` when there was visibly real distance on the map between those two stops.
+  - Overstating total climb and estimated route time.
+  - A page-load crash that turned out to be a variable-ordering bug in newly added code.
 
 ## Features
 
